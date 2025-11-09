@@ -1,7 +1,22 @@
 use bevy::prelude::*;
+use rand::prelude::*;
 
-const TAG_TOP_HAT: i8 = 0;
-const TAG_BEANIE: i8 = 1;
+const TAG_HAT_1: i8 = 0;
+const TAG_HAT_2: i8 = 1;
+const TAG_HAT_3: i8 = 2;
+const TAG_HAT_4: i8 = 3;
+const TAG_HAT_5: i8 = 4;
+const TAG_HAT_6: i8 = 5;
+const TAG_HAT_7: i8 = 6;
+const TAG_HAT_8: i8 = 7;
+const TAG_GHOST_1: i8 = 8;
+const TAG_GHOST_2: i8 = 9;
+const TAG_GHOST_3: i8 = 10;
+const TAG_GHOST_4: i8 = 11;
+const TAG_GHOST_5: i8 = 12;
+const TAG_GHOST_6: i8 = 13;
+const TAG_GHOST_7: i8 = 14;
+const TAG_GHOST_8: i8 = 15;
 
 const LANE_LAYOUT_LEFT: f32 = -450.0;
 const LANE_LAYOUT_BOTTOM: f32 = -200.0;
@@ -14,9 +29,25 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(build_lane_layout())
+        .insert_resource(choose_target_ghosts())
         .add_systems(Startup, (spawn_camera, spawn_ghosts))
         .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
         .run();
+}
+
+#[derive(Resource)]
+struct TargetGhostTags {
+    target_tags: Vec<i8>,
+}
+
+fn choose_target_ghosts() -> TargetGhostTags {
+    let mut rng = rand::rng();
+    let hat = (TAG_HAT_1..=TAG_HAT_8).choose(&mut rng).unwrap();
+    let ghost = (TAG_GHOST_1..=TAG_GHOST_8).choose(&mut rng).unwrap();
+    println!("hat: {hat}, ghost: {ghost}");
+    return TargetGhostTags {
+        target_tags: vec![hat, ghost],
+    };
 }
 
 #[derive(Resource)]
@@ -91,7 +122,7 @@ fn spawn_ghosts(
     mut commands: Commands,
 ) {
     for lane_index in 1..(LANE_LAYOUT_LANE_COUNT - 1) {
-        let hat_tag = if lane_index % 2 == 0 { TAG_TOP_HAT } else { TAG_BEANIE };
+        let hat_tag = if lane_index % 2 == 0 { TAG_HAT_1 } else { TAG_HAT_2 };
         let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
         commands.spawn((
             Ghost,
@@ -143,26 +174,58 @@ fn begin_scooting_ghosts(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,
+    target: Res<TargetGhostTags>,
     mut commands: Commands,
 ) 
 {
-    if !keyboard_input.just_pressed(KeyCode::Space) {
+    let del_x = 
+        if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+            -1i16
+        } else if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+            1i16
+        } else {
+            0i16
+        };
+    if del_x == 0 {
         return;
     }
 
     for (ghost_entity, ghost_tags, mut ghost_lane) in ghosts {
-        if ghost_lane.lane > 0 && ghost_tags.tags.contains(&TAG_BEANIE) {
+        let ghost_lane_i16 = ghost_lane.lane as i16;
+        let new_lane_idx = (ghost_lane_i16 + del_x).clamp(0, (LANE_LAYOUT_LANE_COUNT - 1) as i16);
+        if new_lane_idx == ghost_lane_i16 {
+            continue;
+        }
+        if contains_any(&target.target_tags, &ghost_tags.tags) {
             if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
-                let next_lane = lanes.margined_lanes[(ghost_lane.lane - 1) as usize];
+                let next_lane = lanes.margined_lanes[new_lane_idx as usize];
                 ghost_cmd.insert(
                     GhostScooting {
                         scoot_target: get_random_point_in_rect(&next_lane),
                         movement_speed: 300.0,
                     });
-                ghost_lane.lane -= 1;
+                ghost_lane.lane = new_lane_idx as u8;
             }
         }
     }
+}
+
+fn contains_any(first: &[i8], second: &[i8]) -> bool {
+    for i in second {
+        if first.contains(i) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn slice_wholly_contains(first: &[i8], second: &[i8]) -> bool {
+    for i in second {
+        if !first.contains(i) {
+            return false;
+        }
+    }
+    return true;
 }
 
 fn scoot_ghosts(

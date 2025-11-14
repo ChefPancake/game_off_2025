@@ -26,18 +26,158 @@ const LANE_LAYOUT_LANE_COUNT: u8 = 9;
 const LANE_LAYOUT_MARGIN: f32 = 10.0;
 
 fn main() {
+    let target_ghosts = choose_target_ghosts();
+    let ghost_wave = build_ghost_wave_config(&target_ghosts);
     App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(build_lane_layout())
-        .insert_resource(choose_target_ghosts())
-        .add_systems(Startup, (spawn_camera, spawn_ghosts))
-        .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
-        .run();
+    .add_plugins(DefaultPlugins)
+    .insert_resource(build_lane_layout())
+    .insert_resource(target_ghosts)
+    .insert_resource(ghost_wave)
+    .add_systems(Startup, (spawn_camera, spawn_ghosts))
+    .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
+    .run();
+}
+
+#[derive(Clone)]
+enum Direction {
+    Left,
+    Right
+}
+
+#[derive(Clone)]
+struct GhostInteraction {
+    tag: i8,
+    direction: Direction,
+    strength: i8,
+}
+
+struct ButtonConfig {
+    interactions: [Option<GhostInteraction>; 4],
+    inverted: bool,
+    enabled: bool,
+}
+
+#[derive(Resource)]
+struct GhostWaveConfig {
+    buttons: [ButtonConfig; 5],
 }
 
 #[derive(Resource)]
 struct TargetGhostTags {
     target_tags: Vec<i8>,
+}
+
+fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
+
+    return ButtonConfig {
+        interactions: [None,None,None,None],
+        inverted: false,
+        enabled: false,
+    };
+}
+
+fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
+    let mut rng = rand::rng();
+    let mut all_hats = vec![
+        TAG_HAT_1,
+        TAG_HAT_2,
+        TAG_HAT_3,
+        TAG_HAT_4,
+        TAG_HAT_5,
+        TAG_HAT_6,
+        TAG_HAT_7,
+        TAG_HAT_8,
+    ];
+    all_hats.shuffle(&mut rng);
+    let mut all_ghosts = vec![
+        TAG_GHOST_1,
+        TAG_GHOST_2,
+        TAG_GHOST_3,
+        TAG_GHOST_4,
+        TAG_GHOST_5,
+        TAG_GHOST_6,
+        TAG_GHOST_7,
+        TAG_GHOST_8,
+    ];
+    all_ghosts.shuffle(&mut rng);
+
+    let mut selected_hats = Vec::<i8>::new();
+    let mut selected_ghosts = Vec::<i8>::new();
+
+    let mut i = 0usize;
+    loop {
+        let mut need_more_tags = false;
+
+        if selected_hats.len() < 3 {
+            need_more_tags = true;
+
+            let hat = all_hats[i];
+            if !target_ghost.target_tags.contains(&hat) {
+                selected_hats.push(hat);
+            }
+        }
+        if selected_ghosts.len() < 3 {
+            need_more_tags = true;
+
+            let ghost = all_ghosts[i];
+            if !target_ghost.target_tags.contains(&ghost) {
+                selected_ghosts.push(ghost);
+            }
+        }
+        i += 1;
+        if !need_more_tags {
+            break;
+        }
+    }
+    let mut tag_pool = Vec::<i8>::new();
+    tag_pool.extend(&selected_hats);
+    tag_pool.extend(&selected_hats);
+    tag_pool.extend(&selected_ghosts);
+    tag_pool.extend(&selected_ghosts);
+    tag_pool.shuffle(&mut rng);
+
+    //probably treat the two primary buttons differently, then build the rest from the scraps
+    //each button is going to do 1-3 things to start with
+    //at least two of those buttons will move the main target by one of their tags, as well as one other
+    //unrelated tag.
+    //1 + 2 + 2 + 3 + 3 = 11
+    // build them, then shuffle them to stuff into the final struct
+    let mut button_3_1 = [-1i8;4];
+    let mut button_3_2 = [-1i8;4];
+    let mut button_2_1 = [-1i8;4];
+    let mut button_2_2 = [-1i8;4];
+    let mut button_1_1 = [-1i8;4];
+    let mut spare_tags = Vec::<i8>::new();
+    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_3_1);
+    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_3_2);
+    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_1);
+    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_2);
+    select_button_interactions(1, &mut tag_pool, &mut spare_tags, &mut button_1_1);
+    GhostWaveConfig {
+        buttons: [
+            build_button_config(&button_3_1),
+            build_button_config(&button_3_2),
+            build_button_config(&button_2_1),
+            build_button_config(&button_2_2),
+            build_button_config(&button_1_1),
+        ]
+    }
+}
+fn select_button_interactions(n: usize, tag_pool: &mut Vec<i8>, spare_tags: &mut Vec<i8>, button_array: &mut [i8; 4]) {
+    for i in 0..n {
+        loop {
+            let tag = tag_pool.pop().unwrap();
+            if button_array.contains(&tag) {
+                spare_tags.push(tag);
+            } else {
+                button_array[i] = tag;
+                break;
+            }
+        }
+    }
+    for tag in spare_tags.drain(..) {
+        tag_pool.push(tag);
+    }
 }
 
 fn choose_target_ghosts() -> TargetGhostTags {
@@ -52,19 +192,19 @@ fn choose_target_ghosts() -> TargetGhostTags {
 
 #[derive(Resource)]
 struct LaneLayout {
-    lanes: Vec<Rect>,
+    //lanes: Vec<Rect>,
     margined_lanes: Vec<Rect>,
 }
 
 fn build_lane_layout() -> LaneLayout {
-    let mut lanes = Vec::<Rect>::new();
+    //let mut lanes = Vec::<Rect>::new();
     let mut margined_lanes = Vec::<Rect>::new();
     for lane in 0..LANE_LAYOUT_LANE_COUNT {
-        lanes.push(get_lane_boundary(lane, 0.0));
+        //lanes.push(get_lane_boundary(lane, 0.0));
         margined_lanes.push(get_lane_boundary(lane, LANE_LAYOUT_MARGIN));
     }
     return LaneLayout {
-        lanes,
+        //lanes,
         margined_lanes,
     };
 }

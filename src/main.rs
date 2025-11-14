@@ -68,6 +68,28 @@ struct TargetGhostTags {
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
+    let mut rng = rand::rng();
+    let inverted = rng.random::<bool>();
+    let mut interactions = Vec::new();
+
+    for i in 0..selected_tags.len() {
+        let tag = selected_tags[i];
+        if tag == -1 {
+            continue;
+        }
+        let direction = match rng.random_range(0..2) {
+            0 => Direction::Left,
+            _ => Direction::Right,
+        };
+        let strength = rng.random_range(1..=3);
+        interactions.push(
+            GhostInteraction {
+                tag,
+                direction,
+                strength,
+            }
+        );
+    }
 
     return ButtonConfig {
         interactions: [None,None,None,None],

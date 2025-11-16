@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use rand::prelude::*;
+use std::collections::HashMap;
 
 const TAG_HAT_1: i8 = 0;
 const TAG_HAT_2: i8 = 1;
@@ -39,15 +40,8 @@ fn main() {
 }
 
 #[derive(Clone)]
-enum Direction {
-    Left,
-    Right
-}
-
-#[derive(Clone)]
 struct GhostInteraction {
     tag: i8,
-    direction: Direction,
     strength: i8,
 }
 
@@ -70,30 +64,34 @@ struct TargetGhostTags {
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
     let mut rng = rand::rng();
     let inverted = rng.random::<bool>();
-    let mut interactions = Vec::new();
+    let mut interactions = [
+        Option::<GhostInteraction>::None,
+        Option::<GhostInteraction>::None,
+        Option::<GhostInteraction>::None,
+        Option::<GhostInteraction>::None,
+    ];
 
     for i in 0..selected_tags.len() {
         let tag = selected_tags[i];
         if tag == -1 {
             continue;
         }
-        let direction = match rng.random_range(0..2) {
-            0 => Direction::Left,
-            _ => Direction::Right,
-        };
-        let strength = rng.random_range(1..=3);
-        interactions.push(
+        //we want any value between -3 and 3 except 0
+        let mut strength = rng.random_range(-3..=2);
+        if strength >= 0 {
+            strength += 1;
+        }
+        interactions[i] = 
+            Some(
             GhostInteraction {
                 tag,
-                direction,
                 strength,
-            }
-        );
+            });
     }
 
     return ButtonConfig {
-        interactions: [None,None,None,None],
-        inverted: false,
+        interactions,
+        inverted,
         enabled: false,
     };
 }
@@ -333,6 +331,100 @@ fn animate_ghosts(
 }
 
 fn begin_scooting_ghosts(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
+    lanes: Res<LaneLayout>,
+    target: Res<TargetGhostTags>,
+    ghost_wave: Res<GhostWaveConfig>,
+    mut commands: Commands,
+) {
+    //TODO: skip building up this vec and instead write directly
+    //to the hashmap
+    let mut interactions = Vec::<GhostInteraction>::new();
+    if keyboard_input.just_pressed(KeyCode::Digit1) {
+        // if button is enabled &&...
+        for interaction in ghost_wave.buttons[0].interactions.iter() {
+            if let Some(interaction) = interaction {
+                interactions.push(interaction.clone());
+            }
+        }
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit2) {
+        for interaction in ghost_wave.buttons[1].interactions.iter() {
+            if let Some(interaction) = interaction {
+                interactions.push(interaction.clone());
+            }
+        }
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit3) {
+        for interaction in ghost_wave.buttons[2].interactions.iter() {
+            if let Some(interaction) = interaction {
+                interactions.push(interaction.clone());
+            }
+        }
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit4) {
+        for interaction in ghost_wave.buttons[3].interactions.iter() {
+            if let Some(interaction) = interaction {
+                interactions.push(interaction.clone());
+            }
+        }
+    }
+    if keyboard_input.just_pressed(KeyCode::Digit5) {
+        for interaction in ghost_wave.buttons[4].interactions.iter() {
+            if let Some(interaction) = interaction {
+                interactions.push(interaction.clone());
+            }
+        }
+    }
+    //build up a list of the interactions that are going to happen
+    //and for now, just assume every button is enabled
+    
+    //foreach interaction, build up a Map with a key of tag to see
+    //the total lane movement per tag
+    let mut tag_moves = HashMap::<i8, i8>::new();
+    for interaction in interactions {
+        debug!("interaction: {} - {}", interaction.tag, interaction.strength);    
+        if let Some(val) = tag_moves.get_mut(&interaction.tag) {
+            *val += interaction.tag;
+        } else {
+            tag_moves.insert(interaction.tag, interaction.strength);
+        }
+    }
+
+    //foreach ghost with a matching tag, apply that movement, clamping
+    //it for now to the edges
+    //
+    //in the future, instead of clamping probably apply a new component
+    //to make them move off the map
+    for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
+        if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
+            let mut move_acc = 0i8;
+            for tag in &ghost_tags.tags {
+                if let Some(lane_change) = tag_moves.get(&tag) {
+                    move_acc += lane_change;
+                }
+            }
+            if move_acc > 0 {
+            // apply the move component 
+                let ghost_lane = ghost_lane_pos.lane as i8;
+                let new_lane_idx = (ghost_lane + move_acc).clamp(0, (LANE_LAYOUT_LANE_COUNT - 1) as i8);
+                if new_lane_idx == ghost_lane {
+                    continue;
+                }
+                let next_lane = lanes.margined_lanes[new_lane_idx as usize];
+                ghost_cmd.insert(
+                    GhostScooting {
+                        scoot_target: get_random_point_in_rect(&next_lane),
+                        movement_speed: 300.0,
+                    });
+                ghost_lane_pos.lane = new_lane_idx as u8;
+            }
+        }
+    }
+}
+
+fn begin_scooting_ghosts_old(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,

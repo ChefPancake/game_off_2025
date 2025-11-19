@@ -85,7 +85,7 @@ fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
             continue;
         }
         //we want any value between -3 and 3 except 0
-        let mut strength = rng.random_range(-3..=2);
+        let mut strength = rng.random_range(-1..=0);
         if strength >= 0 {
             strength += 1;
         }
@@ -136,7 +136,7 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
     let mut i = 0usize;
     loop {
         let mut need_more_tags = false;
-        if selected_hats.len() < 3 {
+        if selected_hats.len() < 3 { //TODO: configure the amount here by the current level
             need_more_tags = true;
 
             let hat = all_hats[i];
@@ -144,7 +144,7 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
                 selected_hats.push(hat);
             }
         }
-        if selected_ghosts.len() < 3 {
+        if selected_ghosts.len() < 3 { //TODO: configure the amount here by the current level
             need_more_tags = true;
 
             let ghost = all_ghosts[i];
@@ -170,41 +170,42 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
     //unrelated tag.
     //1 + 2 + 2 + 3 + 3 = 11
     // build them, then shuffle them to stuff into the final struct
-    let mut button_3_1 = [-1i8;4];
-    let mut button_3_2 = [-1i8;4];
-    let mut button_2_1 = [-1i8;4];
-    let mut button_2_2 = [-1i8;4];
-    let mut button_1_1 = [-1i8;4];
+    let mut button_1 = [-1i8;4];
+    let mut button_2 = [-1i8;4];
+    let mut button_3 = [-1i8;4];
+    let mut button_4 = [-1i8;4];
+    let mut button_5 = [-1i8;4];
     let mut spare_tags = Vec::<i8>::new();
-    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_3_1);
-    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_3_2);
-    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_1);
-    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_2);
-    select_button_interactions(1, &mut tag_pool, &mut spare_tags, &mut button_1_1);
+    //TODO: configure these based on the current level
+    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_1);
+    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_2);
+    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_3);
+    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_4);
+    select_button_interactions(1, &mut tag_pool, &mut spare_tags, &mut button_5);
 
     let mut unique_tags = Vec::<i8>::new();
 
-    for tag in &button_3_1 {
+    for tag in &button_1 {
         if *tag != -1 && !unique_tags.contains(tag) {
             unique_tags.push(*tag);
         }
     }
-    for tag in &button_3_2 {
+    for tag in &button_2 {
         if *tag != -1 && !unique_tags.contains(tag) {
             unique_tags.push(*tag);
         }
     }
-    for tag in &button_2_1 {
+    for tag in &button_3 {
         if *tag != -1 && !unique_tags.contains(tag) {
             unique_tags.push(*tag);
         }
     }
-    for tag in &button_2_2 {
+    for tag in &button_4 {
         if *tag != -1 && !unique_tags.contains(tag) {
             unique_tags.push(*tag);
         }
     }
-    for tag in &button_1_1 {
+    for tag in &button_5 {
         if *tag != -1 && !unique_tags.contains(tag) {
             unique_tags.push(*tag);
         }
@@ -212,11 +213,11 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
 
     GhostWaveConfig {
         buttons: [
-            build_button_config(&button_3_1),
-            build_button_config(&button_3_2),
-            build_button_config(&button_2_1),
-            build_button_config(&button_2_2),
-            build_button_config(&button_1_1),
+            build_button_config(&button_1),
+            build_button_config(&button_2),
+            build_button_config(&button_3),
+            build_button_config(&button_4),
+            build_button_config(&button_5),
         ],
         unique_tags,
     }

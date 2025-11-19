@@ -25,9 +25,12 @@ const LANE_LAYOUT_HEIGHT: f32 = 400.0;
 const LANE_LAYOUT_LANE_WIDTH: f32 = 100.0;
 const LANE_LAYOUT_LANE_COUNT: u8 = 9;
 const LANE_LAYOUT_MARGIN: f32 = 10.0;
+const LANE_LAYOUT_BUFFER_LANES: u8 = 2;
+const LANE_LAYOUT_SPAWN_LANES: u8 = LANE_LAYOUT_LANE_COUNT - LANE_LAYOUT_BUFFER_LANES - LANE_LAYOUT_BUFFER_LANES;
 
 const GHOSTS_PER_LANE: u8 = 3;
-const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * (LANE_LAYOUT_LANE_COUNT - 2);
+// don't spawn ghosts in the edges
+const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
 
 fn main() {
     let target_ghosts = choose_target_ghosts();
@@ -86,6 +89,7 @@ fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
         if strength >= 0 {
             strength += 1;
         }
+        println!("{strength}");
         interactions[i] = 
             Some(
             GhostInteraction {
@@ -336,8 +340,6 @@ fn spawn_ghosts(
         }
     }
     let mut rng = rand::rng();
-    // no ghosts spawning in the edges
-
     //repeat hats and ghosts enough times to have enough for the expected ghosts
     let hats_to_repeat = hats.clone();
     let times_to_repeat = EXPECTED_TOTAL_GHOSTS.div_ceil(hats.len() as u8);
@@ -353,7 +355,7 @@ fn spawn_ghosts(
     hats.shuffle(&mut rng);
     bodies.shuffle(&mut rng);
 
-    for lane_index in 1..(LANE_LAYOUT_LANE_COUNT - 1) {
+    for lane_index in LANE_LAYOUT_BUFFER_LANES..LANE_LAYOUT_SPAWN_LANES {
         for _ in 0..3 {
             let hat_tag = hats.pop().expect("Should have enough hat tags to share");
             let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
@@ -438,7 +440,6 @@ fn begin_scooting_ghosts(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,
-    target: Res<TargetGhostTags>,
     ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
@@ -490,7 +491,7 @@ fn begin_scooting_ghosts(
     for interaction in interactions {
         debug!("interaction: {} - {}", interaction.tag, interaction.strength);    
         if let Some(val) = tag_moves.get_mut(&interaction.tag) {
-            *val += interaction.tag;
+            *val += interaction.strength;
         } else {
             tag_moves.insert(interaction.tag, interaction.strength);
         }
@@ -498,7 +499,7 @@ fn begin_scooting_ghosts(
 
     //foreach ghost with a matching tag, apply that movement, clamping
     //it for now to the edges
-    //
+
     //in the future, instead of clamping probably apply a new component
     //to make them move off the map
     for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
@@ -509,7 +510,7 @@ fn begin_scooting_ghosts(
                     move_acc += lane_change;
                 }
             }
-            if move_acc > 0 {
+            if move_acc != 0 {
             // apply the move component 
                 let ghost_lane = ghost_lane_pos.lane as i8;
                 let new_lane_idx = (ghost_lane + move_acc).clamp(0, (LANE_LAYOUT_LANE_COUNT - 1) as i8);
@@ -526,55 +527,6 @@ fn begin_scooting_ghosts(
             }
         }
     }
-}
-
-fn begin_scooting_ghosts_old(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
-    lanes: Res<LaneLayout>,
-    target: Res<TargetGhostTags>,
-    mut commands: Commands,
-) 
-{
-    let del_x = 
-        if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
-            -1i16
-        } else if keyboard_input.just_pressed(KeyCode::ArrowRight) {
-            1i16
-        } else {
-            0i16
-        };
-    if del_x == 0 {
-        return;
-    }
-
-    for (ghost_entity, ghost_tags, mut ghost_lane) in ghosts {
-        let ghost_lane_i16 = ghost_lane.lane as i16;
-        let new_lane_idx = (ghost_lane_i16 + del_x).clamp(0, (LANE_LAYOUT_LANE_COUNT - 1) as i16);
-        if new_lane_idx == ghost_lane_i16 {
-            continue;
-        }
-        if ghost_tags.tags.contains(&target.target_hat) || ghost_tags.tags.contains(&target.target_body) {
-            if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
-                let next_lane = lanes.margined_lanes[new_lane_idx as usize];
-                ghost_cmd.insert(
-                    GhostScooting {
-                        scoot_target: get_random_point_in_rect(&next_lane),
-                        movement_speed: 300.0,
-                    });
-                ghost_lane.lane = new_lane_idx as u8;
-            }
-        }
-    }
-}
-
-fn slice_wholly_contains(first: &[i8], second: &[i8]) -> bool {
-    for i in second {
-        if !first.contains(i) {
-            return false;
-        }
-    }
-    return true;
 }
 
 fn scoot_ghosts(

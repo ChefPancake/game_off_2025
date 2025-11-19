@@ -26,6 +26,9 @@ const LANE_LAYOUT_LANE_WIDTH: f32 = 100.0;
 const LANE_LAYOUT_LANE_COUNT: u8 = 9;
 const LANE_LAYOUT_MARGIN: f32 = 10.0;
 
+const GHOSTS_PER_LANE: u8 = 3;
+const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * (LANE_LAYOUT_LANE_COUNT - 2);
+
 fn main() {
     let target_ghosts = choose_target_ghosts();
     let ghost_wave = build_ghost_wave_config(&target_ghosts);
@@ -54,11 +57,13 @@ struct ButtonConfig {
 #[derive(Resource)]
 struct GhostWaveConfig {
     buttons: [ButtonConfig; 5],
+    unique_tags: Vec<i8>
 }
 
 #[derive(Resource)]
 struct TargetGhostTags {
-    target_tags: Vec<i8>,
+    target_body: i8,
+    target_hat: i8,
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
@@ -127,12 +132,11 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
     let mut i = 0usize;
     loop {
         let mut need_more_tags = false;
-
         if selected_hats.len() < 3 {
             need_more_tags = true;
 
             let hat = all_hats[i];
-            if !target_ghost.target_tags.contains(&hat) {
+            if hat != target_ghost.target_hat {
                 selected_hats.push(hat);
             }
         }
@@ -140,7 +144,7 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
             need_more_tags = true;
 
             let ghost = all_ghosts[i];
-            if !target_ghost.target_tags.contains(&ghost) {
+            if ghost != target_ghost.target_body {
                 selected_ghosts.push(ghost);
             }
         }
@@ -173,6 +177,35 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
     select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_1);
     select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_2_2);
     select_button_interactions(1, &mut tag_pool, &mut spare_tags, &mut button_1_1);
+
+    let mut unique_tags = Vec::<i8>::new();
+
+    for tag in &button_3_1 {
+        if *tag != -1 && !unique_tags.contains(tag) {
+            unique_tags.push(*tag);
+        }
+    }
+    for tag in &button_3_2 {
+        if *tag != -1 && !unique_tags.contains(tag) {
+            unique_tags.push(*tag);
+        }
+    }
+    for tag in &button_2_1 {
+        if *tag != -1 && !unique_tags.contains(tag) {
+            unique_tags.push(*tag);
+        }
+    }
+    for tag in &button_2_2 {
+        if *tag != -1 && !unique_tags.contains(tag) {
+            unique_tags.push(*tag);
+        }
+    }
+    for tag in &button_1_1 {
+        if *tag != -1 && !unique_tags.contains(tag) {
+            unique_tags.push(*tag);
+        }
+    }
+
     GhostWaveConfig {
         buttons: [
             build_button_config(&button_3_1),
@@ -180,9 +213,11 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
             build_button_config(&button_2_1),
             build_button_config(&button_2_2),
             build_button_config(&button_1_1),
-        ]
+        ],
+        unique_tags,
     }
 }
+
 fn select_button_interactions(n: usize, tag_pool: &mut Vec<i8>, spare_tags: &mut Vec<i8>, button_array: &mut [i8; 4]) {
     for i in 0..n {
         loop {
@@ -206,7 +241,8 @@ fn choose_target_ghosts() -> TargetGhostTags {
     let ghost = (TAG_GHOST_1..=TAG_GHOST_8).choose(&mut rng).unwrap();
     println!("hat: {hat}, ghost: {ghost}");
     return TargetGhostTags {
-        target_tags: vec![hat, ghost],
+        target_body: ghost,
+        target_hat: hat,
     };
 }
 
@@ -279,36 +315,104 @@ fn spawn_ghosts(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     lanes: Res<LaneLayout>,
+    ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
-    for lane_index in 1..(LANE_LAYOUT_LANE_COUNT - 1) {
-        let hat_tag = if lane_index % 2 == 0 { TAG_HAT_1 } else { TAG_HAT_2 };
-        let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
-        commands.spawn((
-            Ghost,
-            Transform::from_xyz(pos.x, pos.y, 0.0),
-            Visibility::default(),
-            GhostTags {
-                tags: vec![
-                    hat_tag,
-                ]
-            },
-            GhostLanePosition {
-                lane: lane_index,
-            },
-        ))
-        .with_child((
-            Mesh2d(meshes.add(Rectangle::new(50.0, 50.0)).into()),
-            MeshMaterial2d(materials.add(Color::srgb(1.0, 0.5, 0.2))),
-            Transform::from_xyz(0.0, 10.0, 0.0),
-            GhostAnimationLoop {
-                theta: rand::random::<f32>() * 2.0 * std::f32::consts::PI,
-                omega: std::f32::consts::PI,
-                radius: 10.0,
-                offset: 15.0,
+    // let's make 3 ghosts in each lane
+    // each of them will consist of one type and one hat
+
+    // need to randomly but evenly distribute the tags we know about across all lanes by repeating
+    // the set of unique tags
+
+    let mut hats = Vec::<i8>::new();
+    let mut bodies = Vec::<i8>::new();
+    for tag in &ghost_wave.unique_tags {
+        if let Some(tag_type) = get_tag_type(*tag) {
+            if tag_type == TagType::Body {
+                bodies.push(*tag);
+            } else {
+                hats.push(*tag);
             }
-        ));
+        }
     }
+    let mut rng = rand::rng();
+    // no ghosts spawning in the edges
+
+    //repeat hats and ghosts enough times to have enough for the expected ghosts
+    let hats_to_repeat = hats.clone();
+    let times_to_repeat = EXPECTED_TOTAL_GHOSTS.div_ceil(hats.len() as u8);
+    for _ in 0..times_to_repeat {
+        hats.extend(&hats_to_repeat);
+    }
+    let bodies_to_repeat = bodies.clone();
+    let times_to_repeat = EXPECTED_TOTAL_GHOSTS.div_ceil(bodies.len() as u8);
+    for _ in 0..times_to_repeat {
+        bodies.extend(&bodies_to_repeat);
+    }
+
+    hats.shuffle(&mut rng);
+    bodies.shuffle(&mut rng);
+
+    for lane_index in 1..(LANE_LAYOUT_LANE_COUNT - 1) {
+        for _ in 0..3 {
+            let hat_tag = hats.pop().expect("Should have enough hat tags to share");
+            let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
+            let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
+            commands.spawn((
+                Ghost,
+                Transform::from_xyz(pos.x, pos.y, 0.0),
+                Visibility::default(),
+                GhostTags {
+                    tags: vec![
+                        hat_tag,
+                        ghost_tag,
+                    ]
+                },
+                GhostLanePosition {
+                    lane: lane_index,
+                },
+            ))
+            .with_child((
+                Mesh2d(meshes.add(Rectangle::new(50.0, 50.0)).into()),
+                MeshMaterial2d(materials.add(Color::srgb(1.0, 0.5, 0.2))),
+                Transform::from_xyz(0.0, 10.0, 0.0),
+                GhostAnimationLoop {
+                    theta: rand::random::<f32>() * 2.0 * std::f32::consts::PI,
+                    omega: std::f32::consts::PI,
+                    radius: 10.0,
+                    offset: 15.0,
+                }
+            ));
+        }
+    }
+}
+
+#[derive(PartialEq, Eq)]
+enum TagType {
+    Body,
+    Hat,
+}
+
+fn get_tag_type(tag: i8) -> Option<TagType> {
+    return match tag {
+        TAG_HAT_1 => Some(TagType::Hat),
+        TAG_HAT_2 => Some(TagType::Hat),
+        TAG_HAT_3 => Some(TagType::Hat),
+        TAG_HAT_4 => Some(TagType::Hat),
+        TAG_HAT_5 => Some(TagType::Hat),
+        TAG_HAT_6 => Some(TagType::Hat),
+        TAG_HAT_7 => Some(TagType::Hat),
+        TAG_HAT_8 => Some(TagType::Hat),
+        TAG_GHOST_1 => Some(TagType::Body),
+        TAG_GHOST_2 => Some(TagType::Body),
+        TAG_GHOST_3 => Some(TagType::Body),
+        TAG_GHOST_4 => Some(TagType::Body),
+        TAG_GHOST_5 => Some(TagType::Body),
+        TAG_GHOST_6 => Some(TagType::Body),
+        TAG_GHOST_7 => Some(TagType::Body),
+        TAG_GHOST_8 => Some(TagType::Body),
+        _ => None,
+    };
 }
 
 fn spawn_camera(
@@ -450,7 +554,7 @@ fn begin_scooting_ghosts_old(
         if new_lane_idx == ghost_lane_i16 {
             continue;
         }
-        if contains_any(&target.target_tags, &ghost_tags.tags) {
+        if ghost_tags.tags.contains(&target.target_hat) || ghost_tags.tags.contains(&target.target_body) {
             if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
                 let next_lane = lanes.margined_lanes[new_lane_idx as usize];
                 ghost_cmd.insert(
@@ -462,15 +566,6 @@ fn begin_scooting_ghosts_old(
             }
         }
     }
-}
-
-fn contains_any(first: &[i8], second: &[i8]) -> bool {
-    for i in second {
-        if first.contains(i) {
-            return true;
-        }
-    }
-    return false;
 }
 
 fn slice_wholly_contains(first: &[i8], second: &[i8]) -> bool {

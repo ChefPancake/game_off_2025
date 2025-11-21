@@ -32,17 +32,47 @@ const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
 const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
 
+const GHOST_BODY_NAMES: [&str; 8] = [
+    "Booloon",
+    "Ghoost",
+    "Ghostie",
+    "Handshee",
+    "Puppergeist",
+    "SoapSprite",
+    "Timboo",
+    "Yolkai",
+];
+
+const GHOST_HAT_NAMES: [&str; 8] = [
+    "arrow",
+    "cone",
+    "party",
+    "arrow",
+    "cone",
+    "party",
+    "arrow",
+    "cone",
+];
+
 fn main() {
     let target_ghosts = choose_target_ghosts();
     let ghost_wave = build_ghost_wave_config(&target_ghosts);
     App::new()
     .add_plugins(DefaultPlugins)
     .insert_resource(build_lane_layout())
+    .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
+    .add_systems(PreStartup, (load_sprites))
     .add_systems(Startup, (spawn_camera, spawn_ghosts))
     .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
     .run();
+}
+
+#[derive(Resource, Default)]
+struct Sprites {
+    //by body, then by hat
+    ghosts: Option<[[Handle<Image>; 8]; 8]>
 }
 
 #[derive(Clone)]
@@ -67,6 +97,28 @@ struct GhostWaveConfig {
 struct TargetGhostTags {
     target_body: i8,
     target_hat: i8,
+}
+
+fn load_sprites(
+    assets: Res<AssetServer>,
+    mut sprites: ResMut<Sprites>
+) {
+    let mut handles = Vec::<[Handle<Image>; 8]>::new();
+    for body in 0..8 {
+        let mut handles_by_body = Vec::<Handle<Image>>::new();
+        let body_name = GHOST_BODY_NAMES[body];
+        for hat in 0..8 {
+            let hat_name = GHOST_HAT_NAMES[hat];
+            let file_name = format!("ghosts/{body_name}_{hat_name}.png");
+            let handle: Handle<Image> = assets.load(file_name);
+            handles_by_body.push(handle);
+        }
+        handles.push(handles_by_body
+            .try_into()
+            .expect("Vec should have 8 elements"));
+    }
+    let handles: [[Handle<Image>; 8]; 8] = handles.try_into().expect("Vec should have 8 elements");
+    sprites.ghosts = Some(handles);
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
@@ -317,12 +369,13 @@ struct GhostTags {
 }
 
 fn spawn_ghosts(
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    sprites: Res<Sprites>,
     lanes: Res<LaneLayout>,
     ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
+    let sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
+
     // let's make 3 ghosts in each lane
     // each of them will consist of one type and one hat
 
@@ -356,11 +409,13 @@ fn spawn_ghosts(
     hats.shuffle(&mut rng);
     bodies.shuffle(&mut rng);
 
-    for lane_index in LANE_LAYOUT_BUFFER_LANES..LANE_LAYOUT_SPAWN_LANES {
+    for lane_index in 0..LANE_LAYOUT_SPAWN_LANES {
         for _ in 0..3 {
+            let lane_index = lane_index + LANE_LAYOUT_BUFFER_LANES;
             let hat_tag = hats.pop().expect("Should have enough hat tags to share");
             let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
             let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
+            let sprite = sprites[(ghost_tag - TAG_GHOST_1) as usize][(hat_tag - TAG_HAT_1) as usize].clone();
             commands.spawn((
                 Ghost,
                 Transform::from_xyz(pos.x, pos.y, 0.0),
@@ -376,9 +431,8 @@ fn spawn_ghosts(
                 },
             ))
             .with_child((
-                Mesh2d(meshes.add(Rectangle::new(50.0, 50.0)).into()),
-                MeshMaterial2d(materials.add(Color::srgb(1.0, 0.5, 0.2))),
-                Transform::from_xyz(0.0, 10.0, 0.0),
+                Sprite::from_image(sprite),
+                Transform::from_xyz(0.0, 10.0, 0.0).with_scale(Vec3::new(0.05, 0.05, 1.0)),
                 GhostAnimationLoop {
                     theta: rand::random::<f32>() * 2.0 * std::f32::consts::PI,
                     omega: std::f32::consts::PI,

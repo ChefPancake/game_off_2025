@@ -72,7 +72,7 @@ fn main() {
     .insert_resource(ghost_wave)
     .add_systems(PreStartup, load_sprites)
     .add_systems(Startup, (spawn_ui, spawn_camera, spawn_ghosts, spawn_debug_boxes))
-    .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
+    .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts, update_remote_elements))
     .run();
 }
 
@@ -82,7 +82,11 @@ struct Sprites {
     ghosts: Option<[[Handle<Image>; 8]; 8]>,
     background: Option<Handle<Image>>,
     frame: Option<Handle<Image>>,
+    frame_counter: Option<[Handle<Image>; 10]>,
     remote_base: Option<Handle<Image>>,
+    remote_dial: Option<[Handle<Image>; 3]>,
+    // by wave, then by state
+    remote_wave_toggles: Option<[[Handle<Image>; 2]; 5]>,
 }
 
 #[derive(Clone)]
@@ -127,11 +131,34 @@ fn load_sprites(
             .try_into()
             .expect("Vec should have 8 elements"));
     }
-    let handles: [[Handle<Image>; 8]; 8] = handles.try_into().expect("Vec should have 8 elements");
-    sprites.ghosts = Some(handles);
+    sprites.ghosts = Some(handles.try_into().expect("Vec should have 8 elements"));
     sprites.background = Some(assets.load("ui/Background.png"));
     sprites.frame = Some(assets.load("ui/Frame.png"));
     sprites.remote_base = Some(assets.load("ui/RemoteBase.png"));
+    let mut dial_handles = Vec::<Handle<Image>>::new();
+    for dial_idx in 1..=3 {
+        let file_name = format!("ui/Dial{}.png", dial_idx);
+        dial_handles.push(assets.load(file_name));
+    }
+    sprites.remote_dial = Some(dial_handles.try_into().expect("Vec should have 3 elements"));
+    
+    let mut wave_toggles = Vec::<[Handle<Image>; 2]>::new();
+    for wave_idx in 1..=5 {
+        let wave_off = format!("ui/Wave{}_off.png", wave_idx);
+        let wave_on = format!("ui/Wave{}_on.png", wave_idx);
+        wave_toggles.push([
+            assets.load(wave_off),
+            assets.load(wave_on),
+        ]);
+    }
+    sprites.remote_wave_toggles = Some(wave_toggles.try_into().expect("Vec should have 5 elements"));
+
+    let mut counters = Vec::<Handle<Image>>::new();
+    for counter_idx in 1..=10 {
+        let file_name = format!("ui/Counter{}.png", counter_idx);
+        counters.push(assets.load(file_name));
+    }
+    sprites.frame_counter = Some(counters.try_into().expect("Vec should have 10 elements"));
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
@@ -165,7 +192,7 @@ fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
     return ButtonConfig {
         interactions,
         inverted,
-        enabled: false,
+        enabled: true,
     };
 }
 
@@ -382,8 +409,15 @@ struct GhostTags {
 #[derive(Component)]
 struct Background;
 
-#[derive()]
-struct Clickable;
+#[derive(Component)]
+enum Clickable {
+    Dial,
+    Wave1,
+    Wave2,
+    Wave3,
+    Wave4,
+    Wave5,
+}
 
 fn spawn_ui(
     sprites: Res<Sprites>,
@@ -392,6 +426,8 @@ fn spawn_ui(
     let background = sprites.background.clone().expect("Sprites should be loaded");
     let frame = sprites.frame.clone().expect("Sprites should be loaded");
     let remote_base = sprites.remote_base.clone().expect("Sprites should be loaded");
+    let dial = sprites.remote_dial.as_ref().expect("Sprites should be loaded")[0].clone();
+    let waves = sprites.remote_wave_toggles.as_ref().expect("Sprites should be loaded");
     commands.spawn((
         Sprite::from_image(background),
         Transform::from_xyz(0.0, 0.0, Z_POS_BACKGROUND)
@@ -406,7 +442,38 @@ fn spawn_ui(
         Sprite::from_image(remote_base),
         Transform::from_xyz(450.0, -60.0, Z_POS_DEVICE_BACK)
             .with_scale(Vec3::new(0.2, 0.2, 1.0))
-    ));
+    )).with_children(|cmd| {
+        cmd.spawn((
+            Sprite::from_image(dial),
+            Transform::from_xyz(270.0, 620.0, 1.0),
+            Clickable::Dial,
+        ));
+        cmd.spawn((
+            Sprite::from_image(waves[0][0].clone()),
+            Transform::from_xyz(30.0, 50.0, 1.0),
+            Clickable::Wave1,
+        ));
+        cmd.spawn((
+            Sprite::from_image(waves[1][0].clone()),
+            Transform::from_xyz(22.0, -300.0, 1.0),
+            Clickable::Wave2,
+        ));
+        cmd.spawn((
+            Sprite::from_image(waves[2][0].clone()),
+            Transform::from_xyz(14.0, -650.0, 1.0),
+            Clickable::Wave3,
+        ));
+        cmd.spawn((
+            Sprite::from_image(waves[3][0].clone()),
+            Transform::from_xyz(6.0, -1000.0, 1.0),
+            Clickable::Wave4,
+        ));
+        cmd.spawn((
+            Sprite::from_image(waves[4][0].clone()),
+            Transform::from_xyz(-2.0, -1350.0, 1.0),
+            Clickable::Wave5,
+        ));
+    });
 }
 
 fn spawn_ghosts(
@@ -647,6 +714,31 @@ fn scoot_ghosts(
 
         transform.translation.x += new_vel.x;
         transform.translation.y += new_vel.y;
+    }
+}
+
+fn update_remote_elements(
+    sprites: Res<Sprites>,
+    ghost_wave: Res<GhostWaveConfig>,
+    query: Query<(&mut Sprite, &Clickable)>,
+) {
+    let waves = sprites.remote_wave_toggles.as_ref().expect("Images should be loaded");
+    for (mut sprite, clickable) in query {
+        if let Some(idx) = match clickable {
+            Clickable::Wave1 => Some(0),
+            Clickable::Wave2 => Some(1),
+            Clickable::Wave3 => Some(2),
+            Clickable::Wave4 => Some(3),
+            Clickable::Wave5 => Some(4),
+            _ => None,
+        } {
+            let is_enabled = ghost_wave.buttons[idx].enabled;
+            sprite.image = if is_enabled {
+                waves[idx][1].clone()
+            } else {
+                waves[idx][0].clone()
+            };
+        };
     }
 }
 

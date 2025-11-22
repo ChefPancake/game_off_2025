@@ -19,14 +19,21 @@ const TAG_GHOST_6: i8 = 13;
 const TAG_GHOST_7: i8 = 14;
 const TAG_GHOST_8: i8 = 15;
 
-const LANE_LAYOUT_LEFT: f32 = -450.0;
-const LANE_LAYOUT_BOTTOM: f32 = -200.0;
-const LANE_LAYOUT_HEIGHT: f32 = 400.0;
-const LANE_LAYOUT_LANE_WIDTH: f32 = 100.0;
+const LANE_LAYOUT_LEFT: f32 = -510.0;
+const LANE_LAYOUT_BOTTOM: f32 = -270.0;
+const LANE_LAYOUT_HEIGHT: f32 = 540.0;
+const LANE_LAYOUT_LANE_WIDTH: f32 = 89.0;
 const LANE_LAYOUT_LANE_COUNT: u8 = 9;
-const LANE_LAYOUT_MARGIN: f32 = 10.0;
+const LANE_LAYOUT_MARGIN: f32 = 30.0;
 const LANE_LAYOUT_BUFFER_LANES: u8 = 2;
 const LANE_LAYOUT_SPAWN_LANES: u8 = LANE_LAYOUT_LANE_COUNT - LANE_LAYOUT_BUFFER_LANES - LANE_LAYOUT_BUFFER_LANES;
+
+const Z_POS_BACKGROUND: f32 = -10.0;
+const Z_POS_GHOSTS: f32 = -8.0;
+const Z_POS_FRAME: f32 = -7.0;
+const Z_POS_DEVICE_BACK: f32 = -6.0;
+const Z_POS_DEVICE_BUTTONS: f32 = -5.0;
+const Z_POS_CAMERA: f32 = 10.0;
 
 const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
@@ -63,8 +70,8 @@ fn main() {
     .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
-    .add_systems(PreStartup, (load_sprites))
-    .add_systems(Startup, (spawn_camera, spawn_ghosts))
+    .add_systems(PreStartup, load_sprites)
+    .add_systems(Startup, (spawn_ui, spawn_camera, spawn_ghosts, spawn_debug_boxes))
     .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts))
     .run();
 }
@@ -72,7 +79,10 @@ fn main() {
 #[derive(Resource, Default)]
 struct Sprites {
     //by body, then by hat
-    ghosts: Option<[[Handle<Image>; 8]; 8]>
+    ghosts: Option<[[Handle<Image>; 8]; 8]>,
+    background: Option<Handle<Image>>,
+    frame: Option<Handle<Image>>,
+    remote_base: Option<Handle<Image>>,
 }
 
 #[derive(Clone)]
@@ -119,6 +129,9 @@ fn load_sprites(
     }
     let handles: [[Handle<Image>; 8]; 8] = handles.try_into().expect("Vec should have 8 elements");
     sprites.ghosts = Some(handles);
+    sprites.background = Some(assets.load("ui/Background.png"));
+    sprites.frame = Some(assets.load("ui/Frame.png"));
+    sprites.remote_base = Some(assets.load("ui/RemoteBase.png"));
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
@@ -141,7 +154,6 @@ fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
         if strength >= 0 {
             strength += 1;
         }
-        println!("{strength}");
         interactions[i] = 
             Some(
             GhostInteraction {
@@ -296,7 +308,6 @@ fn choose_target_ghosts() -> TargetGhostTags {
     let mut rng = rand::rng();
     let hat = (TAG_HAT_1..=TAG_HAT_8).choose(&mut rng).unwrap();
     let ghost = (TAG_GHOST_1..=TAG_GHOST_8).choose(&mut rng).unwrap();
-    println!("hat: {hat}, ghost: {ghost}");
     return TargetGhostTags {
         target_body: ghost,
         target_hat: hat,
@@ -368,6 +379,36 @@ struct GhostTags {
     tags: Vec<i8>
 }
 
+#[derive(Component)]
+struct Background;
+
+#[derive()]
+struct Clickable;
+
+fn spawn_ui(
+    sprites: Res<Sprites>,
+    mut commands: Commands,
+) {
+    let background = sprites.background.clone().expect("Sprites should be loaded");
+    let frame = sprites.frame.clone().expect("Sprites should be loaded");
+    let remote_base = sprites.remote_base.clone().expect("Sprites should be loaded");
+    commands.spawn((
+        Sprite::from_image(background),
+        Transform::from_xyz(0.0, 0.0, Z_POS_BACKGROUND)
+            .with_scale(Vec3::new(0.2, 0.2, 1.0))
+    ));
+    commands.spawn((
+        Sprite::from_image(frame),
+        Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
+            .with_scale(Vec3::new(0.2, 0.2, 1.0))
+    ));
+    commands.spawn((
+        Sprite::from_image(remote_base),
+        Transform::from_xyz(450.0, -60.0, Z_POS_DEVICE_BACK)
+            .with_scale(Vec3::new(0.2, 0.2, 1.0))
+    ));
+}
+
 fn spawn_ghosts(
     sprites: Res<Sprites>,
     lanes: Res<LaneLayout>,
@@ -432,7 +473,7 @@ fn spawn_ghosts(
             ))
             .with_child((
                 Sprite::from_image(sprite),
-                Transform::from_xyz(0.0, 10.0, 0.0).with_scale(Vec3::new(0.05, 0.05, 1.0)),
+                Transform::from_xyz(0.0, 10.0, Z_POS_GHOSTS).with_scale(Vec3::new(0.05, 0.05, 1.0)),
                 GhostAnimationLoop {
                     theta: rand::random::<f32>() * 2.0 * std::f32::consts::PI,
                     omega: std::f32::consts::PI,
@@ -609,3 +650,28 @@ fn scoot_ghosts(
     }
 }
 
+fn spawn_debug_boxes(
+    mut commands: Commands,
+    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
+) {
+    let center_y = LANE_LAYOUT_BOTTOM
+        + (LANE_LAYOUT_HEIGHT / 2.0);
+    for i in 0..LANE_LAYOUT_LANE_COUNT {
+        let center_x = LANE_LAYOUT_LEFT + (i as f32 + 0.5) * LANE_LAYOUT_LANE_WIDTH;
+        let mut gizmo = GizmoAsset::new();
+        gizmo.rect_2d(
+            Isometry2d::from_xy(center_x, center_y),
+            Vec2::new(LANE_LAYOUT_LANE_WIDTH, LANE_LAYOUT_HEIGHT),
+            Color::WHITE);
+        commands.spawn(
+            Gizmo {
+                handle: gizmo_assets.add(gizmo),
+                line_config: GizmoLineConfig {
+                    width: 2.,
+                    ..default()
+                },
+                ..default()
+            }
+        );
+    }
+}

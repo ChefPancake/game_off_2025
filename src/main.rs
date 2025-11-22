@@ -104,6 +104,7 @@ struct ButtonConfig {
 #[derive(Resource)]
 struct GhostWaveConfig {
     buttons: [ButtonConfig; 5],
+    dial_strength: u8,
     unique_tags: Vec<i8>
 }
 
@@ -310,6 +311,7 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
             build_button_config(&button_4),
             build_button_config(&button_5),
         ],
+        dial_strength: 2,
         unique_tags,
     }
 }
@@ -409,7 +411,7 @@ struct GhostTags {
 #[derive(Component)]
 struct Background;
 
-#[derive(Component)]
+#[derive(PartialEq, Eq, Component)]
 enum Clickable {
     Dial,
     Wave1,
@@ -599,6 +601,20 @@ fn animate_ghosts(
     }
 }
 
+fn add_to_tag_moves(tag_moves: &mut HashMap::<i8, i8>, button: &ButtonConfig) {
+    if button.enabled {
+        for interaction in button.interactions.iter() {
+            if let Some(interaction) = interaction {
+                if let Some(val) = tag_moves.get_mut(&interaction.tag) {
+                    *val += interaction.strength;
+                } else {
+                    tag_moves.insert(interaction.tag, interaction.strength);
+                }
+            }
+        }
+    }
+}
+
 fn begin_scooting_ghosts(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
@@ -606,71 +622,26 @@ fn begin_scooting_ghosts(
     ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
-    //TODO: skip building up this vec and instead write directly
-    //to the hashmap
-    let mut interactions = Vec::<GhostInteraction>::new();
-    if keyboard_input.just_pressed(KeyCode::Digit1) {
-        // if button is enabled &&...
-        for interaction in ghost_wave.buttons[0].interactions.iter() {
-            if let Some(interaction) = interaction {
-                interactions.push(interaction.clone());
-            }
-        }
-    }
-    if keyboard_input.just_pressed(KeyCode::Digit2) {
-        for interaction in ghost_wave.buttons[1].interactions.iter() {
-            if let Some(interaction) = interaction {
-                interactions.push(interaction.clone());
-            }
-        }
-    }
-    if keyboard_input.just_pressed(KeyCode::Digit3) {
-        for interaction in ghost_wave.buttons[2].interactions.iter() {
-            if let Some(interaction) = interaction {
-                interactions.push(interaction.clone());
-            }
-        }
-    }
-    if keyboard_input.just_pressed(KeyCode::Digit4) {
-        for interaction in ghost_wave.buttons[3].interactions.iter() {
-            if let Some(interaction) = interaction {
-                interactions.push(interaction.clone());
-            }
-        }
-    }
-    if keyboard_input.just_pressed(KeyCode::Digit5) {
-        for interaction in ghost_wave.buttons[4].interactions.iter() {
-            if let Some(interaction) = interaction {
-                interactions.push(interaction.clone());
-            }
-        }
-    }
-    //build up a list of the interactions that are going to happen
-    //and for now, just assume every button is enabled
-    
-    //foreach interaction, build up a Map with a key of tag to see
-    //the total lane movement per tag
     let mut tag_moves = HashMap::<i8, i8>::new();
-    for interaction in interactions {
-        debug!("interaction: {} - {}", interaction.tag, interaction.strength);    
-        if let Some(val) = tag_moves.get_mut(&interaction.tag) {
-            *val += interaction.strength;
-        } else {
-            tag_moves.insert(interaction.tag, interaction.strength);
-        }
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[0]);
+        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[1]);
+        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[2]);
+        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[3]);
+        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
     }
-
     //foreach ghost with a matching tag, apply that movement, clamping
     //it for now to the edges
 
     //in the future, instead of clamping probably apply a new component
     //to make them move off the map
+    let wave_strength = ghost_wave.dial_strength as i8;
     for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
         if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
             let mut move_acc = 0i8;
             for tag in &ghost_tags.tags {
                 if let Some(lane_change) = tag_moves.get(&tag) {
-                    move_acc += lane_change;
+                    move_acc += lane_change * wave_strength;
                 }
             }
             if move_acc != 0 {
@@ -723,6 +694,7 @@ fn update_remote_elements(
     query: Query<(&mut Sprite, &Clickable)>,
 ) {
     let waves = sprites.remote_wave_toggles.as_ref().expect("Images should be loaded");
+    let dial = sprites.remote_dial.as_ref().expect("Images should be loaded");
     for (mut sprite, clickable) in query {
         if let Some(idx) = match clickable {
             Clickable::Wave1 => Some(0),
@@ -739,7 +711,12 @@ fn update_remote_elements(
                 waves[idx][0].clone()
             };
         };
+        if *clickable == Clickable::Dial {
+            let dial_idx = (ghost_wave.dial_strength - 1) as usize;
+            sprite.image = dial[dial_idx].clone();
+        }
     }
+
 }
 
 fn spawn_debug_boxes(

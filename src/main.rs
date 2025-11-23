@@ -70,9 +70,21 @@ fn main() {
     .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
+    .insert_resource(BoxesMade { val: false })
     .add_systems(PreStartup, load_sprites)
-    .add_systems(Startup, (spawn_ui, spawn_camera, spawn_ghosts, spawn_debug_boxes))
-    .add_systems(Update, (animate_ghosts, begin_scooting_ghosts, scoot_ghosts, update_remote_elements))
+    .add_systems(Startup, (
+        spawn_ui,
+        spawn_camera,
+        spawn_ghosts,
+        spawn_debug_lane_boxes,
+    ))
+    .add_systems(Update, (
+        animate_ghosts,
+        begin_scooting_ghosts,
+        scoot_ghosts,
+        update_remote_elements,
+        spawn_debug_clickable_boxes,
+    ))
     .run();
 }
 
@@ -411,14 +423,20 @@ struct GhostTags {
 #[derive(Component)]
 struct Background;
 
-#[derive(PartialEq, Eq, Component)]
-enum Clickable {
+#[derive(PartialEq, Eq)]
+enum ClickableType {
     Dial,
     Wave1,
     Wave2,
     Wave3,
     Wave4,
     Wave5,
+}
+
+#[derive(Component)]
+struct Clickable {
+    clickable_type: ClickableType,
+    bounds: Rect,
 }
 
 fn spawn_ui(
@@ -448,32 +466,62 @@ fn spawn_ui(
         cmd.spawn((
             Sprite::from_image(dial),
             Transform::from_xyz(270.0, 620.0, 1.0),
-            Clickable::Dial,
+        )).with_child((
+            Transform::from_xyz(100.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Dial,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
         cmd.spawn((
             Sprite::from_image(waves[0][0].clone()),
             Transform::from_xyz(30.0, 50.0, 1.0),
-            Clickable::Wave1,
+        )).with_child((
+            Transform::from_xyz(0.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Wave1,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
         cmd.spawn((
             Sprite::from_image(waves[1][0].clone()),
             Transform::from_xyz(22.0, -300.0, 1.0),
-            Clickable::Wave2,
+        )).with_child((
+            Transform::from_xyz(0.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Wave2,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
         cmd.spawn((
             Sprite::from_image(waves[2][0].clone()),
             Transform::from_xyz(14.0, -650.0, 1.0),
-            Clickable::Wave3,
+        )).with_child((
+            Transform::from_xyz(0.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Wave3,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
         cmd.spawn((
             Sprite::from_image(waves[3][0].clone()),
             Transform::from_xyz(6.0, -1000.0, 1.0),
-            Clickable::Wave4,
+        )).with_child((
+            Transform::from_xyz(0.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Wave4,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
         cmd.spawn((
             Sprite::from_image(waves[4][0].clone()),
             Transform::from_xyz(-2.0, -1350.0, 1.0),
-            Clickable::Wave5,
+        )).with_child((
+            Transform::from_xyz(0.0, 0.0, 1.0),
+            Clickable {
+                clickable_type: ClickableType::Wave5,
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+            }
         ));
     });
 }
@@ -696,12 +744,12 @@ fn update_remote_elements(
     let waves = sprites.remote_wave_toggles.as_ref().expect("Images should be loaded");
     let dial = sprites.remote_dial.as_ref().expect("Images should be loaded");
     for (mut sprite, clickable) in query {
-        if let Some(idx) = match clickable {
-            Clickable::Wave1 => Some(0),
-            Clickable::Wave2 => Some(1),
-            Clickable::Wave3 => Some(2),
-            Clickable::Wave4 => Some(3),
-            Clickable::Wave5 => Some(4),
+        if let Some(idx) = match clickable.clickable_type {
+            ClickableType::Wave1 => Some(0),
+            ClickableType::Wave2 => Some(1),
+            ClickableType::Wave3 => Some(2),
+            ClickableType::Wave4 => Some(3),
+            ClickableType::Wave5 => Some(4),
             _ => None,
         } {
             let is_enabled = ghost_wave.buttons[idx].enabled;
@@ -711,7 +759,7 @@ fn update_remote_elements(
                 waves[idx][0].clone()
             };
         };
-        if *clickable == Clickable::Dial {
+        if clickable.clickable_type == ClickableType::Dial {
             let dial_idx = (ghost_wave.dial_strength - 1) as usize;
             sprite.image = dial[dial_idx].clone();
         }
@@ -719,7 +767,7 @@ fn update_remote_elements(
 
 }
 
-fn spawn_debug_boxes(
+fn spawn_debug_lane_boxes(
     mut commands: Commands,
     mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
 ) {
@@ -743,4 +791,39 @@ fn spawn_debug_boxes(
             }
         );
     }
+}
+
+#[derive(Resource)]
+struct BoxesMade {
+    val: bool
+}
+
+fn spawn_debug_clickable_boxes(
+    mut commands: Commands,
+    clickables: Query<(&Clickable, &GlobalTransform)>,
+    mut boxes_made: ResMut<BoxesMade>,
+    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
+) {
+    if boxes_made.val {
+        return;
+    }
+    for (clickable, transform) in clickables {
+        let rect = clickable.bounds;
+        let pos = transform.translation().xy();
+        let mut gizmo = GizmoAsset::new();
+        gizmo.rect_2d(
+            Isometry2d::from_xy(pos.x, pos.y),
+            Vec2::new(rect.width(), rect.height()),
+            Color::WHITE);
+        commands.spawn(
+            Gizmo {
+                handle: gizmo_assets.add(gizmo),
+                line_config: GizmoLineConfig {
+                    width: 2.0,
+                    ..default()
+                },
+                ..default()
+            });
+    }
+    boxes_made.val = true;
 }

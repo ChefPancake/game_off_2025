@@ -1,4 +1,8 @@
-use bevy::prelude::*;
+use bevy::{
+    ecs::relationship::RelatedSpawnerCommands,
+    prelude::*,
+    window::PrimaryWindow,
+};
 use rand::prelude::*;
 use std::collections::HashMap;
 
@@ -71,19 +75,22 @@ fn main() {
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
     .insert_resource(BoxesMade { val: false })
+    .add_message::<CaptureGhostsInitialized>()
     .add_systems(PreStartup, load_sprites)
     .add_systems(Startup, (
         spawn_ui,
         spawn_camera,
         spawn_ghosts,
-        spawn_debug_lane_boxes,
+        //spawn_debug_lane_boxes,
     ))
     .add_systems(Update, (
         animate_ghosts,
         begin_scooting_ghosts,
         scoot_ghosts,
         update_remote_elements,
+        handle_remote_clicks,
         spawn_debug_clickable_boxes,
+        handle_capture_ghosts,
     ))
     .run();
 }
@@ -420,18 +427,16 @@ struct GhostTags {
     tags: Vec<i8>
 }
 
-#[derive(Component)]
-struct Background;
-
 #[derive(PartialEq, Eq)]
 enum ClickableType {
     Dial,
-    Wave1,
-    Wave2,
-    Wave3,
-    Wave4,
-    Wave5,
+    WaveEnable(i8),
+    WaveInvert(i8),
+    CaptureGhosts,
 }
+
+#[derive(Message)]
+struct CaptureGhostsInitialized;
 
 #[derive(Component)]
 struct Clickable {
@@ -457,7 +462,15 @@ fn spawn_ui(
         Sprite::from_image(frame),
         Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
             .with_scale(Vec3::new(0.2, 0.2, 1.0))
+    ))
+    .with_child((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        Clickable {
+            clickable_type: ClickableType::CaptureGhosts,
+            bounds: Rect::new(-900.0, 1600.0, -150.0, 1800.0),
+        },
     ));
+    // TODO: fix this
     commands.spawn((
         Sprite::from_image(remote_base),
         Transform::from_xyz(450.0, -60.0, Z_POS_DEVICE_BACK)
@@ -467,60 +480,43 @@ fn spawn_ui(
             Sprite::from_image(dial),
             Transform::from_xyz(270.0, 620.0, 1.0),
         )).with_child((
-            Transform::from_xyz(100.0, 0.0, 1.0),
+            Transform::from_xyz(0.0, 0.0, 1.0),
             Clickable {
                 clickable_type: ClickableType::Dial,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+                bounds: Rect::new(-140.0, -15.0, 125.0, -280.0),
             }
         ));
+        spawn_wave_button(cmd, Vec2::new(30.0, 50.0), waves[0][0].clone(), 0);
+        spawn_wave_button(cmd, Vec2::new(22.0, -300.0), waves[1][0].clone(), 1);
+        spawn_wave_button(cmd, Vec2::new(14.0, -650.0), waves[2][0].clone(), 2);
+        spawn_wave_button(cmd, Vec2::new(6.0, -1000.0), waves[3][0].clone(), 3);
+        spawn_wave_button(cmd, Vec2::new(-2.0, -1350.0), waves[4][0].clone(), 4);
+    });
+}
+
+fn spawn_wave_button(
+    commands: &mut RelatedSpawnerCommands<'_, ChildOf>,
+    position: Vec2,
+    sprite_handle: Handle<Image>,
+    button_idx: i8,
+) {
+    commands.spawn((
+        Sprite::from_image(sprite_handle),
+        Transform::from_xyz(position.x, position.y, 1.0),
+    )).with_children(|mut cmd| {
         cmd.spawn((
-            Sprite::from_image(waves[0][0].clone()),
-            Transform::from_xyz(30.0, 50.0, 1.0),
-        )).with_child((
             Transform::from_xyz(0.0, 0.0, 1.0),
             Clickable {
-                clickable_type: ClickableType::Wave1,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+                clickable_type: ClickableType::WaveEnable(button_idx),
+                bounds: Rect::new(-400.0, -100.0, 175.0, 120.0),
             }
         ));
+        // TODO: fix this
         cmd.spawn((
-            Sprite::from_image(waves[1][0].clone()),
-            Transform::from_xyz(22.0, -300.0, 1.0),
-        )).with_child((
             Transform::from_xyz(0.0, 0.0, 1.0),
             Clickable {
-                clickable_type: ClickableType::Wave2,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
-            }
-        ));
-        cmd.spawn((
-            Sprite::from_image(waves[2][0].clone()),
-            Transform::from_xyz(14.0, -650.0, 1.0),
-        )).with_child((
-            Transform::from_xyz(0.0, 0.0, 1.0),
-            Clickable {
-                clickable_type: ClickableType::Wave3,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
-            }
-        ));
-        cmd.spawn((
-            Sprite::from_image(waves[3][0].clone()),
-            Transform::from_xyz(6.0, -1000.0, 1.0),
-        )).with_child((
-            Transform::from_xyz(0.0, 0.0, 1.0),
-            Clickable {
-                clickable_type: ClickableType::Wave4,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
-            }
-        ));
-        cmd.spawn((
-            Sprite::from_image(waves[4][0].clone()),
-            Transform::from_xyz(-2.0, -1350.0, 1.0),
-        )).with_child((
-            Transform::from_xyz(0.0, 0.0, 1.0),
-            Clickable {
-                clickable_type: ClickableType::Wave5,
-                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
+                clickable_type: ClickableType::WaveInvert(button_idx),
+                bounds: Rect::new(250.0, -75.0, 375.0, 85.0),
             }
         ));
     });
@@ -736,35 +732,99 @@ fn scoot_ghosts(
     }
 }
 
+fn handle_remote_clicks(
+    window: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform)>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    mut buttons: ResMut<GhostWaveConfig>,
+    query: Query<(&GlobalTransform, &Clickable)>,
+    mut on_capture_fire: MessageWriter<CaptureGhostsInitialized>
+) {
+    if mouse_button.just_pressed(MouseButton::Left) {
+        if let Ok((camera, camera_transform)) = camera.single() {
+            if let Ok(window) = window.single() {
+                if let Some(cursor_pos) = window.cursor_position() {
+                    if let Ok(cursor_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
+                        for (clickable_transform, clickable) in query {
+                            let clickable_pos = clickable_transform.translation();
+                            let clickable_scale = clickable_transform.scale();
+                            let width = clickable.bounds.width() * clickable_scale.x;
+                            let height = clickable.bounds.height() * clickable_scale.y;
+                            let half_width = width / 2.0;
+                            let half_height = height / 2.0;
+                            let left = clickable_pos.x - half_width;
+                            let bottom = clickable_pos.y - half_height;
+
+                            // this only sorta works, I think I'm not applying the scale right
+                            // but once scaling stops I can remove the scale stuff, then it should be ok
+                            if cursor_pos.x >= left && cursor_pos.x <= left + width 
+                                && cursor_pos.y >= bottom && cursor_pos.y < bottom + height 
+                            {
+                                match clickable.clickable_type {
+                                    ClickableType::Dial => { buttons.dial_strength = (buttons.dial_strength % 3) + 1; },
+                                    ClickableType::WaveEnable(idx) => { 
+                                        buttons.buttons[idx as usize].enabled = !buttons.buttons[idx as usize].enabled;
+                                    },
+                                    ClickableType::WaveInvert(idx) => {
+                                        buttons.buttons[idx as usize].inverted = !buttons.buttons[idx as usize].inverted;
+                                    },
+                                    ClickableType::CaptureGhosts => {
+                                        on_capture_fire.write(CaptureGhostsInitialized);
+                                    },
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn handle_capture_ghosts(
+    mut on_capture_fired: MessageReader<CaptureGhostsInitialized>,
+    ghosts: Query<(Entity, &GhostLanePosition)>,
+    mut commands: Commands,
+) {
+    if on_capture_fired.is_empty() {
+        return;
+    }
+    on_capture_fired.clear();
+    for (entity, ghost_lane) in ghosts {
+        if ghost_lane.lane == 4 { //5th, center lane
+            // TODO: Update points, despawn the ghosts, flash the screen(?), create lil ghost souls
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 fn update_remote_elements(
     sprites: Res<Sprites>,
     ghost_wave: Res<GhostWaveConfig>,
-    query: Query<(&mut Sprite, &Clickable)>,
+    query: Query<&Clickable>,
+    parents: Query<(&mut Sprite, &Children)>,
 ) {
     let waves = sprites.remote_wave_toggles.as_ref().expect("Images should be loaded");
     let dial = sprites.remote_dial.as_ref().expect("Images should be loaded");
-    for (mut sprite, clickable) in query {
-        if let Some(idx) = match clickable.clickable_type {
-            ClickableType::Wave1 => Some(0),
-            ClickableType::Wave2 => Some(1),
-            ClickableType::Wave3 => Some(2),
-            ClickableType::Wave4 => Some(3),
-            ClickableType::Wave5 => Some(4),
-            _ => None,
-        } {
-            let is_enabled = ghost_wave.buttons[idx].enabled;
-            sprite.image = if is_enabled {
-                waves[idx][1].clone()
-            } else {
-                waves[idx][0].clone()
-            };
-        };
-        if clickable.clickable_type == ClickableType::Dial {
-            let dial_idx = (ghost_wave.dial_strength - 1) as usize;
-            sprite.image = dial[dial_idx].clone();
+    for (mut sprite, children) in parents {
+        for child in children.iter() {
+            if let Ok(clickable) = query.get(child) {
+                if let ClickableType::WaveEnable(idx) = clickable.clickable_type {
+                    let idx = idx as usize;
+                    let is_enabled = ghost_wave.buttons[idx].enabled;
+                    sprite.image = if is_enabled {
+                        waves[idx][1].clone()
+                    } else {
+                        waves[idx][0].clone()
+                    };
+                }
+                if clickable.clickable_type == ClickableType::Dial {
+                    let dial_idx = (ghost_wave.dial_strength - 1) as usize;
+                    sprite.image = dial[dial_idx].clone();
+                }
+            }
         }
     }
-
 }
 
 fn spawn_debug_lane_boxes(
@@ -800,30 +860,32 @@ struct BoxesMade {
 
 fn spawn_debug_clickable_boxes(
     mut commands: Commands,
-    clickables: Query<(&Clickable, &GlobalTransform)>,
+    clickables: Query<(Entity, &Clickable)>,
     mut boxes_made: ResMut<BoxesMade>,
     mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
 ) {
     if boxes_made.val {
         return;
     }
-    for (clickable, transform) in clickables {
+    for (entity, clickable) in clickables {
         let rect = clickable.bounds;
-        let pos = transform.translation().xy();
         let mut gizmo = GizmoAsset::new();
+        let half_width = rect.width() / 2.0;
+        let half_height = rect.height() / 2.0;
         gizmo.rect_2d(
-            Isometry2d::from_xy(pos.x, pos.y),
+            Isometry2d::from_xy(rect.min.x + half_width, rect.min.y + half_height),
             Vec2::new(rect.width(), rect.height()),
-            Color::WHITE);
-        commands.spawn(
-            Gizmo {
-                handle: gizmo_assets.add(gizmo),
-                line_config: GizmoLineConfig {
-                    width: 2.0,
+            Color::BLACK);
+        commands.entity(entity)
+            .insert(
+                Gizmo {
+                    handle: gizmo_assets.add(gizmo),
+                    line_config: GizmoLineConfig {
+                        width: 2.0,
+                        ..default()
+                    },
                     ..default()
-                },
-                ..default()
-            });
+                });
     }
     boxes_made.val = true;
 }

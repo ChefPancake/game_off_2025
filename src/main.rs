@@ -14,14 +14,14 @@ const TAG_HAT_5: i8 = 4;
 const TAG_HAT_6: i8 = 5;
 const TAG_HAT_7: i8 = 6;
 const TAG_HAT_8: i8 = 7;
-const TAG_GHOST_1: i8 = 8;
-const TAG_GHOST_2: i8 = 9;
-const TAG_GHOST_3: i8 = 10;
-const TAG_GHOST_4: i8 = 11;
-const TAG_GHOST_5: i8 = 12;
-const TAG_GHOST_6: i8 = 13;
-const TAG_GHOST_7: i8 = 14;
-const TAG_GHOST_8: i8 = 15;
+const TAG_BODY_1: i8 = 8;
+const TAG_BODY_2: i8 = 9;
+const TAG_BODY_3: i8 = 10;
+const TAG_BODY_4: i8 = 11;
+const TAG_BODY_5: i8 = 12;
+const TAG_BODY_6: i8 = 13;
+const TAG_BODY_7: i8 = 14;
+const TAG_BODY_8: i8 = 15;
 
 const LANE_LAYOUT_LEFT: f32 = -510.0;
 const LANE_LAYOUT_BOTTOM: f32 = -270.0;
@@ -77,8 +77,12 @@ fn main() {
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
     .insert_resource(BoxesMade { val: false })
+    .insert_resource(UIEnabled { enabled: true })
+    .insert_resource(PlayerResources { charges: 3, points: 0 })
     .add_message::<CaptureGhostsInitialized>()
     .add_message::<RemoteFired>()
+    .add_message::<GameWon>()
+    .add_message::<GameLost>()
     .add_systems(PreStartup, load_sprites)
     .add_systems(Startup, (
         spawn_ui,
@@ -93,7 +97,9 @@ fn main() {
         update_remote_elements,
         handle_remote_clicks,
         spawn_debug_clickable_boxes,
-        handle_capture_ghosts,
+        capture_ghosts,
+        handle_ui_enabled,
+        handle_game_end,
     ))
     .run();
 }
@@ -109,6 +115,17 @@ struct Sprites {
     remote_dial: Option<[Handle<Image>; 3]>,
     // by wave, then by state
     remote_wave_toggles: Option<[[Handle<Image>; 2]; 5]>,
+}
+
+#[derive(Resource)]
+struct UIEnabled {
+    enabled: bool,
+}
+
+#[derive(Resource)]
+struct PlayerResources {
+    charges: u8,
+    points: u8,
 }
 
 #[derive(Clone)]
@@ -233,14 +250,14 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
     ];
     all_hats.shuffle(&mut rng);
     let mut all_ghosts = vec![
-        TAG_GHOST_1,
-        TAG_GHOST_2,
-        TAG_GHOST_3,
-        TAG_GHOST_4,
-        TAG_GHOST_5,
-        TAG_GHOST_6,
-        TAG_GHOST_7,
-        TAG_GHOST_8,
+        TAG_BODY_1,
+        TAG_BODY_2,
+        TAG_BODY_3,
+        TAG_BODY_4,
+        TAG_BODY_5,
+        TAG_BODY_6,
+        TAG_BODY_7,
+        TAG_BODY_8,
     ];
     all_ghosts.shuffle(&mut rng);
 
@@ -358,7 +375,8 @@ fn select_button_interactions(n: usize, tag_pool: &mut Vec<i8>, spare_tags: &mut
 fn choose_target_ghosts() -> TargetGhostTags {
     let mut rng = rand::rng();
     let hat = (TAG_HAT_1..=TAG_HAT_8).choose(&mut rng).unwrap();
-    let ghost = (TAG_GHOST_1..=TAG_GHOST_8).choose(&mut rng).unwrap();
+    let ghost = (TAG_BODY_1..=TAG_BODY_8).choose(&mut rng).unwrap();
+    println!("body: {}; hat: {}", ghost, hat);
     return TargetGhostTags {
         target_body: ghost,
         target_hat: hat,
@@ -427,7 +445,8 @@ struct GhostScooting {
 
 #[derive(Component)]
 struct GhostTags {
-    tags: Vec<i8>
+    body_tag: i8,
+    hat_tag: i8,
 }
 
 #[derive(PartialEq, Eq)]
@@ -582,16 +601,14 @@ fn spawn_ghosts(
             let hat_tag = hats.pop().expect("Should have enough hat tags to share");
             let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
             let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
-            let sprite = sprites[(ghost_tag - TAG_GHOST_1) as usize][(hat_tag - TAG_HAT_1) as usize].clone();
+            let sprite = sprites[(ghost_tag - TAG_BODY_1) as usize][(hat_tag - TAG_HAT_1) as usize].clone();
             commands.spawn((
                 Ghost,
                 Transform::from_xyz(pos.x, pos.y, 0.0),
                 Visibility::default(),
                 GhostTags {
-                    tags: vec![
-                        hat_tag,
-                        ghost_tag,
-                    ]
+                    body_tag: ghost_tag,
+                    hat_tag: hat_tag,
                 },
                 GhostLanePosition {
                     lane: lane_index,
@@ -627,14 +644,14 @@ fn get_tag_type(tag: i8) -> Option<TagType> {
         TAG_HAT_6 => Some(TagType::Hat),
         TAG_HAT_7 => Some(TagType::Hat),
         TAG_HAT_8 => Some(TagType::Hat),
-        TAG_GHOST_1 => Some(TagType::Body),
-        TAG_GHOST_2 => Some(TagType::Body),
-        TAG_GHOST_3 => Some(TagType::Body),
-        TAG_GHOST_4 => Some(TagType::Body),
-        TAG_GHOST_5 => Some(TagType::Body),
-        TAG_GHOST_6 => Some(TagType::Body),
-        TAG_GHOST_7 => Some(TagType::Body),
-        TAG_GHOST_8 => Some(TagType::Body),
+        TAG_BODY_1 => Some(TagType::Body),
+        TAG_BODY_2 => Some(TagType::Body),
+        TAG_BODY_3 => Some(TagType::Body),
+        TAG_BODY_4 => Some(TagType::Body),
+        TAG_BODY_5 => Some(TagType::Body),
+        TAG_BODY_6 => Some(TagType::Body),
+        TAG_BODY_7 => Some(TagType::Body),
+        TAG_BODY_8 => Some(TagType::Body),
         _ => None,
     };
 }
@@ -683,7 +700,9 @@ fn begin_scooting_ghosts(
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,
     ghost_wave: Res<GhostWaveConfig>,
+    target_ghost: Res<TargetGhostTags>,
     mut commands: Commands,
+    mut on_lose: MessageWriter<GameLost>,
 ) {
     if on_fire.is_empty() {
         return;
@@ -705,18 +724,25 @@ fn begin_scooting_ghosts(
     for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
         if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
             let mut move_acc = 0i8;
-            for tag in &ghost_tags.tags {
-                if let Some(lane_change) = tag_moves.get(&tag) {
-                    move_acc += lane_change * wave_strength;
-                }
+            if let Some(lane_change) = tag_moves.get(&ghost_tags.body_tag) {
+                move_acc += lane_change * wave_strength;
+            }
+            if let Some(lane_change) = tag_moves.get(&ghost_tags.hat_tag) {
+                move_acc += lane_change * wave_strength;
             }
             if move_acc != 0 {
                 // apply the move component 
+                let is_target = 
+                    ghost_tags.body_tag == target_ghost.target_body
+                    && ghost_tags.hat_tag == target_ghost.target_hat;
                 let ghost_lane = ghost_lane_pos.lane as i8;
                 let new_lane_idx = ghost_lane + move_acc;
                 if new_lane_idx == ghost_lane {
                     continue;
                 } else if new_lane_idx < 0 {
+                    if is_target {
+                        on_lose.write(GameLost);
+                    }
                     let random_y = rand::random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
                     ghost_cmd.insert((
                         WanderingOff,
@@ -730,6 +756,9 @@ fn begin_scooting_ghosts(
                     ghost_cmd.remove::<GhostTags>();
                     ghost_cmd.remove::<GhostLanePosition>();
                 } else if new_lane_idx >= LANE_LAYOUT_LANE_COUNT as i8 {
+                    if is_target {
+                        on_lose.write(GameLost);
+                    }
                     let random_y = rand::random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
                     ghost_cmd.insert((
                         WanderingOff,
@@ -793,7 +822,11 @@ fn handle_remote_clicks(
     query: Query<(&GlobalTransform, &Clickable)>,
     mut on_capture_fire: MessageWriter<CaptureGhostsInitialized>,
     mut on_remote_fire: MessageWriter<RemoteFired>,
+    ui_enabled: Res<UIEnabled>,
 ) {
+    if !ui_enabled.enabled {
+        return;
+    }
     if mouse_button.just_pressed(MouseButton::Left) {
         if let Ok((camera, camera_transform)) = camera.single() {
             if let Ok(window) = window.single() {
@@ -838,19 +871,58 @@ fn handle_remote_clicks(
     }
 }
 
-fn handle_capture_ghosts(
+#[derive(Message)]
+struct GameWon;
+
+#[derive(Message)]
+struct GameLost;
+
+fn capture_ghosts(
     mut on_capture_fired: MessageReader<CaptureGhostsInitialized>,
-    ghosts: Query<(Entity, &GhostLanePosition)>,
+    ghosts: Query<(Entity, &GhostLanePosition, &GhostTags)>,
+    target: Res<TargetGhostTags>,
+    mut player_resources: ResMut<PlayerResources>,
     mut commands: Commands,
+    mut on_win: MessageWriter<GameWon>,
+    mut on_lose: MessageWriter<GameLost>,
 ) {
     if on_capture_fired.is_empty() {
         return;
     }
     on_capture_fired.clear();
-    for (entity, ghost_lane) in ghosts {
+    let mut any_ghosts_captured = false;
+    let mut points_delta = 0i8;
+    let mut target_ghosts_exist_in_other_lanes = false;
+    for (entity, ghost_lane, ghost_tags) in ghosts {
+        let is_target = 
+            ghost_tags.body_tag == target.target_body
+            && ghost_tags.hat_tag == target.target_hat;
         if ghost_lane.lane == 4 { //5th, center lane
-            // TODO: Update points, despawn the ghosts, flash the screen(?), create lil ghost souls
+            any_ghosts_captured = true;
+            if is_target {
+                points_delta += 1;
+            } else {
+                points_delta -= 2;
+            }
+            println!("captured: body: {}; hat: {}", ghost_tags.body_tag, ghost_tags.hat_tag);
+            // TODO: flash the screen(?), create lil ghost souls
             commands.entity(entity).despawn();
+        } else {
+            if is_target {
+                target_ghosts_exist_in_other_lanes = true;
+            }
+        }
+    }
+    if any_ghosts_captured {
+        //TODO: maybe do something with negative points?
+            //Maybe you just lose instead?
+        player_resources.points = points_delta.max(0) as u8;
+        player_resources.charges -= 1;
+        if player_resources.charges == 0 && target_ghosts_exist_in_other_lanes {
+            on_lose.write(GameLost);
+        }
+        if !target_ghosts_exist_in_other_lanes {
+            on_win.write(GameWon);
         }
     }
 }
@@ -952,4 +1024,24 @@ fn spawn_debug_clickable_boxes(
                 });
     }
     boxes_made.val = true;
+}
+
+fn handle_ui_enabled(
+    mut ui_enabled: ResMut<UIEnabled>,
+    ghosts: Query<&GhostScooting, With<Ghost>>,
+) {
+    ui_enabled.enabled = ghosts.is_empty();
+}
+
+//TODO: actually do something here
+fn handle_game_end(
+    mut on_win: MessageReader<GameWon>,
+    mut on_lose: MessageReader<GameLost>,
+) {
+    for _ in on_win.read() {
+        println!("you win!");
+    }
+    for _ in on_lose.read() {
+        println!("you lose!");
+    }
 }

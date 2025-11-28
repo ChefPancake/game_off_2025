@@ -76,6 +76,7 @@ fn main() {
     .insert_resource(ghost_wave)
     .insert_resource(BoxesMade { val: false })
     .add_message::<CaptureGhostsInitialized>()
+    .add_message::<RemoteFired>()
     .add_systems(PreStartup, load_sprites)
     .add_systems(Startup, (
         spawn_ui,
@@ -432,6 +433,7 @@ enum ClickableType {
     Dial,
     WaveEnable(i8),
     WaveInvert(i8),
+    FireWave,
     CaptureGhosts,
 }
 
@@ -458,6 +460,7 @@ fn spawn_ui(
         Transform::from_xyz(0.0, 0.0, Z_POS_BACKGROUND)
             .with_scale(Vec3::new(0.2, 0.2, 1.0))
     ));
+    //TODO: fix position of this clickable
     commands.spawn((
         Sprite::from_image(frame),
         Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
@@ -470,7 +473,6 @@ fn spawn_ui(
             bounds: Rect::new(-900.0, 1600.0, -150.0, 1800.0),
         },
     ));
-    // TODO: fix this
     commands.spawn((
         Sprite::from_image(remote_base),
         Transform::from_xyz(450.0, -60.0, Z_POS_DEVICE_BACK)
@@ -484,6 +486,15 @@ fn spawn_ui(
             Clickable {
                 clickable_type: ClickableType::Dial,
                 bounds: Rect::new(-140.0, -15.0, 125.0, -280.0),
+            }
+        ));
+        cmd.spawn((
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        )).with_child((
+            Transform::from_xyz(0.0, 300.0, 0.0),
+            Clickable {
+                clickable_type: ClickableType::FireWave,
+                bounds: Rect::new(0.0, 0.0, 200.0, 200.0),
             }
         ));
         spawn_wave_button(cmd, Vec2::new(30.0, 50.0), waves[0][0].clone(), 0);
@@ -659,21 +670,27 @@ fn add_to_tag_moves(tag_moves: &mut HashMap::<i8, i8>, button: &ButtonConfig) {
     }
 }
 
+#[derive(Message)]
+struct RemoteFired;
+
 fn begin_scooting_ghosts(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut on_fire: MessageReader<RemoteFired>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,
     ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
-    let mut tag_moves = HashMap::<i8, i8>::new();
-    if keyboard_input.just_pressed(KeyCode::Space) {
-        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[0]);
-        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[1]);
-        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[2]);
-        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[3]);
-        add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
+    if on_fire.is_empty() {
+        return;
     }
+    on_fire.clear();
+
+    let mut tag_moves = HashMap::<i8, i8>::new();
+    add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[0]);
+    add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[1]);
+    add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[2]);
+    add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[3]);
+    add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
     //foreach ghost with a matching tag, apply that movement, clamping
     //it for now to the edges
 
@@ -738,7 +755,8 @@ fn handle_remote_clicks(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut buttons: ResMut<GhostWaveConfig>,
     query: Query<(&GlobalTransform, &Clickable)>,
-    mut on_capture_fire: MessageWriter<CaptureGhostsInitialized>
+    mut on_capture_fire: MessageWriter<CaptureGhostsInitialized>,
+    mut on_remote_fire: MessageWriter<RemoteFired>,
 ) {
     if mouse_button.just_pressed(MouseButton::Left) {
         if let Ok((camera, camera_transform)) = camera.single() {
@@ -771,6 +789,9 @@ fn handle_remote_clicks(
                                     ClickableType::CaptureGhosts => {
                                         on_capture_fire.write(CaptureGhostsInitialized);
                                     },
+                                    ClickableType::FireWave => {
+                                        on_remote_fire.write(RemoteFired);
+                                    }
                                 };
                             }
                         }
@@ -821,6 +842,13 @@ fn update_remote_elements(
                 if clickable.clickable_type == ClickableType::Dial {
                     let dial_idx = (ghost_wave.dial_strength - 1) as usize;
                     sprite.image = dial[dial_idx].clone();
+                }
+                if let ClickableType::WaveInvert(idx) = clickable.clickable_type {
+                    let idx = idx as usize;
+                    let is_inverted = ghost_wave.buttons[idx].inverted;
+                    // sprite.image = if is_inverted {
+                    //     ...
+                    // }
                 }
             }
         }

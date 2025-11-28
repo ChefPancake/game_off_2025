@@ -31,6 +31,8 @@ const LANE_LAYOUT_LANE_COUNT: u8 = 9;
 const LANE_LAYOUT_MARGIN: f32 = 30.0;
 const LANE_LAYOUT_BUFFER_LANES: u8 = 2;
 const LANE_LAYOUT_SPAWN_LANES: u8 = LANE_LAYOUT_LANE_COUNT - LANE_LAYOUT_BUFFER_LANES - LANE_LAYOUT_BUFFER_LANES;
+const LANE_LAYOUT_DESPAWN_LEFT: f32 = -800.0;
+const LANE_LAYOUT_DESPAWN_RIGHT: f32 = 800.0;
 
 const Z_POS_BACKGROUND: f32 = -10.0;
 const Z_POS_GHOSTS: f32 = -8.0;
@@ -673,6 +675,9 @@ fn add_to_tag_moves(tag_moves: &mut HashMap::<i8, i8>, button: &ButtonConfig) {
 #[derive(Message)]
 struct RemoteFired;
 
+#[derive(Component)]
+struct WanderingOff;
+
 fn begin_scooting_ghosts(
     mut on_fire: MessageReader<RemoteFired>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
@@ -706,30 +711,57 @@ fn begin_scooting_ghosts(
                 }
             }
             if move_acc != 0 {
-            // apply the move component 
+                // apply the move component 
                 let ghost_lane = ghost_lane_pos.lane as i8;
-                let new_lane_idx = (ghost_lane + move_acc).clamp(0, (LANE_LAYOUT_LANE_COUNT - 1) as i8);
+                let new_lane_idx = ghost_lane + move_acc;
                 if new_lane_idx == ghost_lane {
                     continue;
+                } else if new_lane_idx < 0 {
+                    let random_y = rand::random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
+                    ghost_cmd.insert((
+                        WanderingOff,
+                        GhostScooting {
+                            scoot_target: Vec2::new(LANE_LAYOUT_DESPAWN_LEFT, random_y),
+                            movement_speed: 200.0,
+                        },
+                    ));
+                    // TODO: combine into single component?
+                    ghost_cmd.remove::<Ghost>();
+                    ghost_cmd.remove::<GhostTags>();
+                    ghost_cmd.remove::<GhostLanePosition>();
+                } else if new_lane_idx >= LANE_LAYOUT_LANE_COUNT as i8 {
+                    let random_y = rand::random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
+                    ghost_cmd.insert((
+                        WanderingOff,
+                        GhostScooting {
+                            scoot_target: Vec2::new(LANE_LAYOUT_DESPAWN_RIGHT, random_y),
+                            movement_speed: 200.0,
+                        },
+                    ));
+                    // TODO: combine into single component?
+                    ghost_cmd.remove::<Ghost>();
+                    ghost_cmd.remove::<GhostTags>();
+                    ghost_cmd.remove::<GhostLanePosition>();
+                } else {
+                    let next_lane = lanes.margined_lanes[new_lane_idx as usize];
+                    ghost_cmd.insert(
+                        GhostScooting {
+                            scoot_target: get_random_point_in_rect(&next_lane),
+                            movement_speed: 300.0,
+                        });
+                    ghost_lane_pos.lane = new_lane_idx as u8;
                 }
-                let next_lane = lanes.margined_lanes[new_lane_idx as usize];
-                ghost_cmd.insert(
-                    GhostScooting {
-                        scoot_target: get_random_point_in_rect(&next_lane),
-                        movement_speed: 300.0,
-                    });
-                ghost_lane_pos.lane = new_lane_idx as u8;
             }
         }
     }
 }
 
 fn scoot_ghosts(
-    ghosts: Query<(Entity, &GhostScooting, &mut Transform)>,
+    ghosts: Query<(Entity, &GhostScooting, Option<&WanderingOff>, &mut Transform)>,
     time: Res<Time>,
     mut commands: Commands,
 ) {
-    for (ghost_entity, scooting, mut transform) in ghosts {
+    for (ghost_entity, scooting, wandering, mut transform) in ghosts {
         let direction = scooting.scoot_target - transform.translation.xy();
         let remaining_distance = direction.length();
         let direction = direction.normalize();
@@ -738,7 +770,11 @@ fn scoot_ghosts(
             transform.translation.x = scooting.scoot_target.x;
             transform.translation.y = scooting.scoot_target.y;
             if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
-                ghost_cmd.remove::<GhostScooting>();
+                if wandering.is_some() {
+                    ghost_cmd.despawn();
+                } else {
+                    ghost_cmd.remove::<GhostScooting>();
+                }
             }
             return;
         }

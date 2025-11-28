@@ -10,6 +10,7 @@ This is the remaining work for finishing the game
         - [ ] Make sure that all clickable areas are now accurate
         - [ ] Rebuild the new buttons
             - Things should be separated out now so they'll have to be dynamically constructed
+        - [ ] Audo-adjust camera scale with window resizes
     - [ ] Get the inverter working
         - [ ] Update the sprite based on state
     - [ ] Track number of capture charges
@@ -22,7 +23,7 @@ This is the remaining work for finishing the game
         - [ ] Display points
         - [ ] Going below 0 ends the game? maybe
     - [x] Make ghosts wander off the edges
-    - [ ] Lose the game if any target ghosts wander off the edge
+    - [x] Lose the game if any target ghosts wander off the edge
     - [x] Lock up UI while ghosts are wandering
     - [ ] Display target ghost in the window
     - [ ] Remove debug boxes
@@ -45,4 +46,5 @@ This is the remaining work for finishing the game
         - [ ] Turning on the device
         - [ ] Ghosts leaving
         - [ ] Ghosts captured
+    - [ ] Add parallax to the remote
 

@@ -14,33 +14,38 @@ const TAG_HAT_5: i8 = 4;
 const TAG_HAT_6: i8 = 5;
 const TAG_HAT_7: i8 = 6;
 const TAG_HAT_8: i8 = 7;
-const TAG_BODY_1: i8 = 8;
-const TAG_BODY_2: i8 = 9;
-const TAG_BODY_3: i8 = 10;
-const TAG_BODY_4: i8 = 11;
-const TAG_BODY_5: i8 = 12;
-const TAG_BODY_6: i8 = 13;
-const TAG_BODY_7: i8 = 14;
-const TAG_BODY_8: i8 = 15;
+const TAG_HAT_9: i8 = 8;
+const TAG_HAT_10: i8 = 9;
+const TAG_HAT_11: i8 = 10;
+const TAG_HAT_12: i8 = 11;
+const TAG_HAT_13: i8 = 12;
+const TAG_HAT_14: i8 = 13;
+const TAG_BODY_1: i8 = 14;
+const TAG_BODY_2: i8 = 15;
+const TAG_BODY_3: i8 = 16;
+const TAG_BODY_4: i8 = 17;
+const TAG_BODY_5: i8 = 18;
+const TAG_BODY_6: i8 = 19;
+const TAG_BODY_7: i8 = 20;
+const TAG_BODY_8: i8 = 21;
 
-const LANE_LAYOUT_LEFT: f32 = -510.0;
-const LANE_LAYOUT_BOTTOM: f32 = -270.0;
-const LANE_LAYOUT_HEIGHT: f32 = 540.0;
-const LANE_LAYOUT_LANE_WIDTH: f32 = 89.0;
+const LANE_LAYOUT_LEFT: f32 = -1635.5;
+const LANE_LAYOUT_BOTTOM: f32 = -900.0;
+const LANE_LAYOUT_HEIGHT: f32 = 1500.0;
+const LANE_LAYOUT_LANE_WIDTH: f32 = 284.5;
 const LANE_LAYOUT_LANE_COUNT: u8 = 9;
-const LANE_LAYOUT_MARGIN: f32 = 30.0;
+const LANE_LAYOUT_MARGIN: f32 = 100.0;
 const LANE_LAYOUT_BUFFER_LANES: u8 = 2;
 const LANE_LAYOUT_SPAWN_LANES: u8 = LANE_LAYOUT_LANE_COUNT - LANE_LAYOUT_BUFFER_LANES - LANE_LAYOUT_BUFFER_LANES;
-const LANE_LAYOUT_DESPAWN_LEFT: f32 = -800.0;
-const LANE_LAYOUT_DESPAWN_RIGHT: f32 = 800.0;
+const LANE_LAYOUT_DESPAWN_LEFT: f32 = -2000.0;
+const LANE_LAYOUT_DESPAWN_RIGHT: f32 = 2000.0;
 
 const Z_POS_BACKGROUND: f32 = -10.0;
 const Z_POS_GHOSTS: f32 = -8.0;
 const Z_POS_FRAME: f32 = -7.0;
 const Z_POS_DEVICE_BACK: f32 = -6.0;
-const Z_POS_DEVICE_BUTTONS: f32 = -5.0;
-const Z_POS_CAMERA: f32 = 10.0;
 
+const GHOST_SPRITE_SCALE: f32 = 0.3;
 const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
 const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
@@ -56,15 +61,29 @@ const GHOST_BODY_NAMES: [&str; 8] = [
     "Yolkai",
 ];
 
-const GHOST_HAT_NAMES: [&str; 8] = [
+const GHOST_HAT_NAMES: [&str; 14] = [
     "arrow",
+    "belt",
+    "bow",
     "cone",
+    "crown",
+    "flower",
+    "glasses",
+    "lollipop",
+    "mug",
+    "mustache",
     "party",
-    "arrow",
-    "cone",
-    "party",
-    "arrow",
-    "cone",
+    "propellor",
+    "tophat",
+    "wings",
+];
+
+const GHOST_WAVE_NAMES: [&str; 5] = [
+    "Rectified",
+    "Sawtooth",
+    "Sine",
+    "Square",
+    "Triangle",
 ];
 
 fn main() {
@@ -88,13 +107,14 @@ fn main() {
         spawn_ui,
         spawn_camera,
         spawn_ghosts,
-        //spawn_debug_lane_boxes,
+        spawn_debug_lane_boxes,
     ))
     .add_systems(Update, (
         animate_ghosts,
         begin_scooting_ghosts,
         scoot_ghosts,
-        update_remote_elements,
+        update_remote_lights,
+        update_remote_invert_switches,
         handle_remote_clicks,
         spawn_debug_clickable_boxes,
         capture_ghosts,
@@ -107,14 +127,18 @@ fn main() {
 #[derive(Resource, Default)]
 struct Sprites {
     //by body, then by hat
-    ghosts: Option<[[Handle<Image>; 8]; 8]>,
+    ghosts: Option<[[Handle<Image>; 14]; 8]>,
     background: Option<Handle<Image>>,
     frame: Option<Handle<Image>>,
     frame_counter: Option<[Handle<Image>; 10]>,
     remote_base: Option<Handle<Image>>,
     remote_dial: Option<[Handle<Image>; 3]>,
     // by wave, then by state
-    remote_wave_toggles: Option<[[Handle<Image>; 2]; 5]>,
+    remote_wave_buttons: Option<[Handle<Image>; 5]>,
+    remote_wave_light: Option<[Handle<Image>; 2]>,
+    remote_wave_inverter: Option<[Handle<Image>; 2]>,
+    remote_handle: Option<Handle<Image>>,
+    particles: Option<[Handle<Image>; 5]>,
 }
 
 #[derive(Resource)]
@@ -157,11 +181,11 @@ fn load_sprites(
     assets: Res<AssetServer>,
     mut sprites: ResMut<Sprites>
 ) {
-    let mut handles = Vec::<[Handle<Image>; 8]>::new();
+    let mut handles = Vec::<[Handle<Image>; 14]>::new();
     for body in 0..8 {
         let mut handles_by_body = Vec::<Handle<Image>>::new();
         let body_name = GHOST_BODY_NAMES[body];
-        for hat in 0..8 {
+        for hat in 0..14 {
             let hat_name = GHOST_HAT_NAMES[hat];
             let file_name = format!("ghosts/{body_name}_{hat_name}.png");
             let handle: Handle<Image> = assets.load(file_name);
@@ -169,12 +193,12 @@ fn load_sprites(
         }
         handles.push(handles_by_body
             .try_into()
-            .expect("Vec should have 8 elements"));
+            .expect("Vec should have 14 elements"));
     }
     sprites.ghosts = Some(handles.try_into().expect("Vec should have 8 elements"));
     sprites.background = Some(assets.load("ui/Background.png"));
     sprites.frame = Some(assets.load("ui/Frame.png"));
-    sprites.remote_base = Some(assets.load("ui/RemoteBase.png"));
+    sprites.remote_base = Some(assets.load("ui/Machine.png"));
     let mut dial_handles = Vec::<Handle<Image>>::new();
     for dial_idx in 1..=3 {
         let file_name = format!("ui/Dial{}.png", dial_idx);
@@ -182,16 +206,24 @@ fn load_sprites(
     }
     sprites.remote_dial = Some(dial_handles.try_into().expect("Vec should have 3 elements"));
     
-    let mut wave_toggles = Vec::<[Handle<Image>; 2]>::new();
-    for wave_idx in 1..=5 {
-        let wave_off = format!("ui/Wave{}_off.png", wave_idx);
-        let wave_on = format!("ui/Wave{}_on.png", wave_idx);
-        wave_toggles.push([
-            assets.load(wave_off),
-            assets.load(wave_on),
-        ]);
+    let mut wave_buttons = Vec::<Handle<Image>>::new();
+    for wave in GHOST_WAVE_NAMES {
+        let file_name = format!("ui/Button{}.png", wave);
+        wave_buttons.push(assets.load(file_name));
     }
-    sprites.remote_wave_toggles = Some(wave_toggles.try_into().expect("Vec should have 5 elements"));
+    sprites.remote_wave_buttons = Some(wave_buttons.try_into().expect("Vec should have 5 elements"));
+
+    sprites.remote_wave_light = Some([
+        assets.load("ui/LightOff.png"),
+        assets.load("ui/LightOn.png"),
+    ]);
+
+    sprites.remote_wave_inverter = Some([
+        assets.load("ui/InvertSetOff.png"),
+        assets.load("ui/InvertSetOn.png"),
+    ]);
+
+    sprites.remote_handle = Some(assets.load("ui/Handle.png"));
 
     let mut counters = Vec::<Handle<Image>>::new();
     for counter_idx in 1..=10 {
@@ -199,6 +231,13 @@ fn load_sprites(
         counters.push(assets.load(file_name));
     }
     sprites.frame_counter = Some(counters.try_into().expect("Vec should have 10 elements"));
+
+    let mut wave_particles = Vec::<Handle<Image>>::new();
+    for wave in GHOST_WAVE_NAMES {
+        let file_name = format!("ui/Particle{}.png", wave);
+        wave_particles.push(assets.load(file_name));
+    }
+    sprites.particles = Some(wave_particles.try_into().expect("Vec should have 5 elements"));
 }
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
@@ -247,6 +286,12 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
         TAG_HAT_6,
         TAG_HAT_7,
         TAG_HAT_8,
+        TAG_HAT_9,
+        TAG_HAT_10,
+        TAG_HAT_11,
+        TAG_HAT_12,
+        TAG_HAT_13,
+        TAG_HAT_14,
     ];
     all_hats.shuffle(&mut rng);
     let mut all_ghosts = vec![
@@ -426,10 +471,14 @@ struct Ghost;
 
 #[derive(Component)]
 struct GhostAnimationLoop {
-    theta: f32,
-    omega: f32,
-    radius: f32,
-    offset: f32,
+    theta_x: f32,
+    omega_x: f32,
+    radius_x: f32,
+
+    theta_y: f32,
+    omega_y: f32,
+    radius_y: f32,
+    offset_y: f32,
 }
 
 #[derive(Component)]
@@ -475,17 +524,17 @@ fn spawn_ui(
     let frame = sprites.frame.clone().expect("Sprites should be loaded");
     let remote_base = sprites.remote_base.clone().expect("Sprites should be loaded");
     let dial = sprites.remote_dial.as_ref().expect("Sprites should be loaded")[0].clone();
-    let waves = sprites.remote_wave_toggles.as_ref().expect("Sprites should be loaded");
+    let waves = sprites.remote_wave_buttons.as_ref().expect("Sprites should be loaded");
+    let toggles = sprites.remote_wave_inverter.as_ref().expect("Sprites should be loaded");
+    let lights = sprites.remote_wave_light.as_ref().expect("Sprites should be loaded");
     commands.spawn((
         Sprite::from_image(background),
         Transform::from_xyz(0.0, 0.0, Z_POS_BACKGROUND)
-            .with_scale(Vec3::new(0.2, 0.2, 1.0))
     ));
     //TODO: fix position of this clickable
     commands.spawn((
         Sprite::from_image(frame),
         Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
-            .with_scale(Vec3::new(0.2, 0.2, 1.0))
     ))
     .with_child((
         Transform::from_xyz(0.0, 0.0, 0.0),
@@ -496,12 +545,12 @@ fn spawn_ui(
     ));
     commands.spawn((
         Sprite::from_image(remote_base),
-        Transform::from_xyz(450.0, -60.0, Z_POS_DEVICE_BACK)
-            .with_scale(Vec3::new(0.2, 0.2, 1.0))
+        Transform::from_xyz(1425.0, -180.0, Z_POS_DEVICE_BACK)
     )).with_children(|cmd| {
         cmd.spawn((
+            StrengthDial,
             Sprite::from_image(dial),
-            Transform::from_xyz(270.0, 620.0, 1.0),
+            Transform::from_xyz(180.0, 400.0, 1.0),
         )).with_child((
             Transform::from_xyz(0.0, 0.0, 1.0),
             Clickable {
@@ -510,7 +559,8 @@ fn spawn_ui(
             }
         ));
         cmd.spawn((
-            Transform::from_xyz(0.0, 0.0, 0.0),
+            FireWaveHandle,
+            Transform::from_xyz(-200.0, 0.0, 0.0),
         )).with_child((
             Transform::from_xyz(0.0, 300.0, 0.0),
             Clickable {
@@ -518,37 +568,80 @@ fn spawn_ui(
                 bounds: Rect::new(0.0, 0.0, 200.0, 200.0),
             }
         ));
-        spawn_wave_button(cmd, Vec2::new(30.0, 50.0), waves[0][0].clone(), 0);
-        spawn_wave_button(cmd, Vec2::new(22.0, -300.0), waves[1][0].clone(), 1);
-        spawn_wave_button(cmd, Vec2::new(14.0, -650.0), waves[2][0].clone(), 2);
-        spawn_wave_button(cmd, Vec2::new(6.0, -1000.0), waves[3][0].clone(), 3);
-        spawn_wave_button(cmd, Vec2::new(-2.0, -1350.0), waves[4][0].clone(), 4);
+
+        for i in 0..5 {
+            const BUTTON_SPACING_X_START: f32 = -30.0;
+            const BUTTON_SPACING_X: f32 = 5.0;
+            const BUTTON_SPACING_Y_START: f32 = 50.0;
+            const BUTTON_SPACING_Y: f32 = 235.0;
+            let btn_x = BUTTON_SPACING_X_START - (BUTTON_SPACING_X * i as f32);
+            let btn_y = BUTTON_SPACING_Y_START - (BUTTON_SPACING_Y * i as f32);
+            spawn_wave_button(
+                cmd,
+                Vec2::new(btn_x, btn_y),
+                waves[i].clone(),
+                toggles[0].clone(),
+                lights[0].clone(),
+                i as i8);
+
+
+        }
     });
 }
+
+#[derive(Component)]
+struct WaveButtonLight {
+    button_idx: i8,
+}
+
+#[derive(Component)]
+struct InverterSwitch {
+    button_idx: i8,
+}
+
+#[derive(Component)]
+struct FireWaveHandle;
+
+#[derive(Component)]
+struct StrengthDial;
 
 fn spawn_wave_button(
     commands: &mut RelatedSpawnerCommands<'_, ChildOf>,
     position: Vec2,
-    sprite_handle: Handle<Image>,
+    button_sprite_handle: Handle<Image>,
+    toggle_sprite_handle: Handle<Image>,
+    light_sprite_handle: Handle<Image>,
     button_idx: i8,
 ) {
     commands.spawn((
-        Sprite::from_image(sprite_handle),
         Transform::from_xyz(position.x, position.y, 1.0),
-    )).with_children(|mut cmd| {
+        Visibility::Visible,
+    )).with_children(|cmd| {
         cmd.spawn((
+            Sprite::from_image(button_sprite_handle),
             Transform::from_xyz(0.0, 0.0, 1.0),
             Clickable {
                 clickable_type: ClickableType::WaveEnable(button_idx),
-                bounds: Rect::new(-400.0, -100.0, 175.0, 120.0),
+                bounds: Rect::new(-180.0, -55.0, 180.0, 55.0),
             }
+        ));
+        cmd.spawn((
+            Sprite::from_image(light_sprite_handle),
+            Transform::from_xyz(-260.0, 10.0, 1.0),
+            WaveButtonLight {
+                button_idx,
+            },
         ));
         // TODO: fix this
         cmd.spawn((
-            Transform::from_xyz(0.0, 0.0, 1.0),
+            Sprite::from_image(toggle_sprite_handle),
+            Transform::from_xyz(300.0, -20.0, 1.0),
             Clickable {
                 clickable_type: ClickableType::WaveInvert(button_idx),
-                bounds: Rect::new(250.0, -75.0, 375.0, 85.0),
+                bounds: Rect::new(-90.0, -90.0, 30.0, 90.0),
+            },
+            InverterSwitch {
+                button_idx,
             }
         ));
     });
@@ -602,6 +695,13 @@ fn spawn_ghosts(
             let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
             let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
             let sprite = sprites[(ghost_tag - TAG_BODY_1) as usize][(hat_tag - TAG_HAT_1) as usize].clone();
+            let radius_x = 20.0 + rand::random::<f32>() * 10.0;
+            let omega_x = std::f32::consts::PI / 8.0 + rand::random::<f32>() * std::f32::consts::PI / 4.0;
+            let theta_x = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
+
+            let radius_y = 40.0 + rand::random::<f32>() * 20.0;
+            let omega_y = std::f32::consts::PI / 4.0 + rand::random::<f32>() * std::f32::consts::PI / 2.0;
+            let theta_y = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
             commands.spawn((
                 Ghost,
                 Transform::from_xyz(pos.x, pos.y, 0.0),
@@ -616,12 +716,15 @@ fn spawn_ghosts(
             ))
             .with_child((
                 Sprite::from_image(sprite),
-                Transform::from_xyz(0.0, 10.0, Z_POS_GHOSTS).with_scale(Vec3::new(0.05, 0.05, 1.0)),
+                Transform::from_xyz(0.0, 10.0, Z_POS_GHOSTS).with_scale(Vec3::new(GHOST_SPRITE_SCALE, GHOST_SPRITE_SCALE, 1.0)),
                 GhostAnimationLoop {
-                    theta: rand::random::<f32>() * 2.0 * std::f32::consts::PI,
-                    omega: std::f32::consts::PI,
-                    radius: 10.0,
-                    offset: 15.0,
+                    theta_x,
+                    omega_x,
+                    radius_x,
+                    theta_y,
+                    omega_y,
+                    radius_y,
+                    offset_y: 45.0,
                 }
             ));
         }
@@ -644,6 +747,12 @@ fn get_tag_type(tag: i8) -> Option<TagType> {
         TAG_HAT_6 => Some(TagType::Hat),
         TAG_HAT_7 => Some(TagType::Hat),
         TAG_HAT_8 => Some(TagType::Hat),
+        TAG_HAT_9 => Some(TagType::Hat),
+        TAG_HAT_10 => Some(TagType::Hat),
+        TAG_HAT_11 => Some(TagType::Hat),
+        TAG_HAT_12 => Some(TagType::Hat),
+        TAG_HAT_13 => Some(TagType::Hat),
+        TAG_HAT_14 => Some(TagType::Hat),
         TAG_BODY_1 => Some(TagType::Body),
         TAG_BODY_2 => Some(TagType::Body),
         TAG_BODY_3 => Some(TagType::Body),
@@ -661,7 +770,8 @@ fn spawn_camera(
 ) {
     commands.spawn((
         Camera2d,
-        Camera::default()
+        Camera::default(),
+        Transform::from_scale(Vec3::new(3.0, 3.0, 1.0)),
     ));
 }
 
@@ -669,9 +779,15 @@ fn animate_ghosts(
     ghosts: Query<(&mut Transform, &mut GhostAnimationLoop)>,
     time: Res<Time>,
 ) {
+    const GHOST_SQUIDGE_RADIUS: f32 = 0.01;
+
     for (mut transform, mut ghost_anim) in ghosts {
-        ghost_anim.theta += ghost_anim.omega * time.delta_secs();
-        transform.translation.y = ghost_anim.theta.sin() * ghost_anim.radius + ghost_anim.offset;
+        ghost_anim.theta_y += ghost_anim.omega_y * time.delta_secs();
+        ghost_anim.theta_x += ghost_anim.omega_x * time.delta_secs();
+        transform.translation.y = ghost_anim.theta_y.sin() * ghost_anim.radius_y + ghost_anim.offset_y;
+        transform.translation.x = ghost_anim.theta_x.sin() * ghost_anim.radius_x;
+        transform.scale.x = GHOST_SPRITE_SCALE + (ghost_anim.theta_y * 2.0).sin() * GHOST_SQUIDGE_RADIUS;
+        transform.scale.y = GHOST_SPRITE_SCALE + (ghost_anim.theta_y * 2.0 + std::f32::consts::PI / 2.0).sin() * GHOST_SQUIDGE_RADIUS;
     }
 }
 
@@ -715,11 +831,7 @@ fn begin_scooting_ghosts(
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[2]);
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[3]);
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
-    //foreach ghost with a matching tag, apply that movement, clamping
-    //it for now to the edges
 
-    //in the future, instead of clamping probably apply a new component
-    //to make them move off the map
     let wave_strength = ghost_wave.dial_strength as i8;
     for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
         if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
@@ -748,7 +860,7 @@ fn begin_scooting_ghosts(
                         WanderingOff,
                         GhostScooting {
                             scoot_target: Vec2::new(LANE_LAYOUT_DESPAWN_LEFT, random_y),
-                            movement_speed: 200.0,
+                            movement_speed: 400.0,
                         },
                     ));
                     // TODO: combine into single component?
@@ -764,7 +876,7 @@ fn begin_scooting_ghosts(
                         WanderingOff,
                         GhostScooting {
                             scoot_target: Vec2::new(LANE_LAYOUT_DESPAWN_RIGHT, random_y),
-                            movement_speed: 200.0,
+                            movement_speed: 400.0,
                         },
                     ));
                     // TODO: combine into single component?
@@ -776,7 +888,7 @@ fn begin_scooting_ghosts(
                     ghost_cmd.insert(
                         GhostScooting {
                             scoot_target: get_random_point_in_rect(&next_lane),
-                            movement_speed: 300.0,
+                            movement_speed: 600.0,
                         });
                     ghost_lane_pos.lane = new_lane_idx as u8;
                 }
@@ -834,9 +946,8 @@ fn handle_remote_clicks(
                     if let Ok(cursor_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
                         for (clickable_transform, clickable) in query {
                             let clickable_pos = clickable_transform.translation();
-                            let clickable_scale = clickable_transform.scale();
-                            let width = clickable.bounds.width() * clickable_scale.x;
-                            let height = clickable.bounds.height() * clickable_scale.y;
+                            let width = clickable.bounds.width();
+                            let height = clickable.bounds.height();
                             let half_width = width / 2.0;
                             let half_height = height / 2.0;
                             let left = clickable_pos.x - half_width;
@@ -848,7 +959,9 @@ fn handle_remote_clicks(
                                 && cursor_pos.y >= bottom && cursor_pos.y < bottom + height 
                             {
                                 match clickable.clickable_type {
-                                    ClickableType::Dial => { buttons.dial_strength = (buttons.dial_strength % 3) + 1; },
+                                    ClickableType::Dial => { 
+                                        buttons.dial_strength = (buttons.dial_strength % 3) + 1;
+                                    },
                                     ClickableType::WaveEnable(idx) => { 
                                         buttons.buttons[idx as usize].enabled = !buttons.buttons[idx as usize].enabled;
                                     },
@@ -926,6 +1039,60 @@ fn capture_ghosts(
         }
     }
 }
+fn update_remote_lights(
+    sprites: Res<Sprites>,
+    ghost_wave: Res<GhostWaveConfig>,
+    lights: Query<(&mut Sprite, &WaveButtonLight)>,
+) {
+    let light_sprites = sprites.remote_wave_light.as_ref().expect("Images should be loaded");
+    for (mut light_sprite, light) in lights {
+        let is_enabled = ghost_wave.buttons[light.button_idx as usize].enabled;
+        if is_enabled {
+            light_sprite.image = light_sprites[1].clone();
+        } else {
+            light_sprite.image = light_sprites[0].clone();
+        }
+    }
+}
+
+fn update_remote_invert_switches(
+    sprites: Res<Sprites>,
+    ghost_wave: Res<GhostWaveConfig>,
+    inverters: Query<(&mut Sprite, &InverterSwitch)>,
+) {
+    let inverter_sprites = sprites.remote_wave_inverter.as_ref().expect("Images should be loaded");
+    for (mut sprite, inverter) in inverters {
+        let is_inverted = ghost_wave.buttons[inverter.button_idx as usize].enabled;
+        if is_inverted {
+            sprite.image = inverter_sprites[1].clone();
+        } else {
+            sprite.image = inverter_sprites[0].clone();
+        }
+    }
+}
+
+fn update_remote_elements_new(
+    sprites: Res<Sprites>,
+    ghost_wave: Res<GhostWaveConfig>,
+    lights: Query<(&mut Sprite, &WaveButtonLight)>,
+    inverters: Query<(&mut Sprite, &InverterSwitch)>,
+    dials: Query<&mut Sprite, With<StrengthDial>>,
+    handles: Query<&mut Sprite, With<FireWaveHandle>>,
+) {
+    let light_sprites = sprites.remote_wave_light.as_ref().expect("Images should be loaded");
+    let inverter_sprites = sprites.remote_wave_inverter.as_ref().expect("Images should be loaded");
+    let dial_sprites = sprites.remote_dial.as_ref().expect("Images should be loaded");
+    let handle_sprite = sprites.remote_handle.as_ref().expect("Images should be loaded");
+    for (mut light_sprite, light) in lights {
+        let is_enabled = ghost_wave.buttons[light.button_idx as usize].enabled;
+        if is_enabled {
+            light_sprite.image = light_sprites[1].clone();
+        } else {
+            light_sprite.image = light_sprites[0].clone();
+        }
+    }
+
+}
 
 fn update_remote_elements(
     sprites: Res<Sprites>,
@@ -933,7 +1100,7 @@ fn update_remote_elements(
     query: Query<&Clickable>,
     parents: Query<(&mut Sprite, &Children)>,
 ) {
-    let waves = sprites.remote_wave_toggles.as_ref().expect("Images should be loaded");
+    let waves = sprites.remote_wave_buttons.as_ref().expect("Images should be loaded");
     let dial = sprites.remote_dial.as_ref().expect("Images should be loaded");
     for (mut sprite, children) in parents {
         for child in children.iter() {
@@ -941,10 +1108,11 @@ fn update_remote_elements(
                 if let ClickableType::WaveEnable(idx) = clickable.clickable_type {
                     let idx = idx as usize;
                     let is_enabled = ghost_wave.buttons[idx].enabled;
+                    // TODO: fix this to light up the individual lights
                     sprite.image = if is_enabled {
-                        waves[idx][1].clone()
+                        waves[idx].clone()
                     } else {
-                        waves[idx][0].clone()
+                        waves[idx].clone()
                     };
                 }
                 if clickable.clickable_type == ClickableType::Dial {

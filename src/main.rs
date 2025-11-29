@@ -131,7 +131,7 @@ struct Sprites {
     ghosts: Option<[[Handle<Image>; 14]; 8]>,
     background: Option<Handle<Image>>,
     frame: Option<Handle<Image>>,
-    frame_counter: Option<[Handle<Image>; 10]>,
+    frame_counter: Option<[Handle<Image>; 11]>,
     remote_base: Option<Handle<Image>>,
     remote_dial: Option<[Handle<Image>; 3]>,
     // by wave, then by state
@@ -230,7 +230,7 @@ fn load_sprites(
     sprites.remote_handle = Some(assets.load("ui/Handle.png"));
 
     let mut counters = Vec::<Handle<Image>>::new();
-    for counter_idx in 1..=10 {
+    for counter_idx in 0..=10 {
         let file_name = format!("ui/Counter{}.png", counter_idx);
         counters.push(assets.load(file_name));
     }
@@ -557,7 +557,7 @@ fn spawn_ui(
         cmd.spawn((
             TargetGhostDisplay,
             Sprite::from_image(target_ghost_sprite),
-            Transform::from_xyz(-1550.0, 830.0, 1.0)
+            Transform::from_xyz(-1580.0, 860.0, 1.0)
                 .with_scale(Vec3::new(0.5, 0.5, 1.0))
                 .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, std::f32::consts::PI / 12.0)),
         ));
@@ -1141,8 +1141,8 @@ fn update_counters(
     let counter_sprites = sprites.frame_counter.as_ref().expect("Sprites should be loaded");
     for (mut sprite, counter_type) in counters {
         let sprite_idx = match *counter_type {
-            ResourceCounter::Reputation => player_resources.reputation - 1,
-            ResourceCounter::Charges => player_resources.charges - 1,
+            ResourceCounter::Reputation => player_resources.reputation,
+            ResourceCounter::Charges => player_resources.charges,
         } as usize;
         sprite.image = counter_sprites[sprite_idx].clone();
     }

@@ -28,8 +28,9 @@ This is the remaining work for finishing the game
     - [x] Display target ghost in the window
     - [x] Remove debug boxes
     - [ ] Respond to game win/lose
-    - [ ] Get new frame
-    - [ ] Put backing 
+        - [ ] Lock everything down and spawn the splash screen
+    - [x] Get new frame
+    - [x] Put backing 
 - [ ] Ideal
     - [ ] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen

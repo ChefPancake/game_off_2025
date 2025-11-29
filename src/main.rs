@@ -96,7 +96,8 @@ fn main() {
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
     .insert_resource(UIEnabled { enabled: true })
-    .insert_resource(PlayerResources { charges: 3, points: 0 })
+    //TODO: change this to change the difficulty
+    .insert_resource(PlayerResources { charges: 3, reputation: 5 })
     .add_message::<CaptureGhostsInitialized>()
     .add_message::<RemoteFired>()
     .add_message::<GameWon>()
@@ -115,6 +116,7 @@ fn main() {
         update_remote_invert_switches,
         update_remote_dial,
         update_wave_handle,
+        update_counters,
         handle_remote_clicks,
         capture_ghosts,
         handle_ui_enabled,
@@ -148,7 +150,7 @@ struct UIEnabled {
 #[derive(Resource)]
 struct PlayerResources {
     charges: u8,
-    points: u8,
+    reputation: u8,
 }
 
 #[derive(Clone)]
@@ -520,6 +522,7 @@ struct Clickable {
 fn spawn_ui(
     sprites: Res<Sprites>,
     target_ghost: Res<TargetGhostTags>,
+    player_resources: Res<PlayerResources>,
     mut commands: Commands,
 ) {
     let ghost_sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
@@ -531,6 +534,7 @@ fn spawn_ui(
     let waves = sprites.remote_wave_buttons.as_ref().expect("Sprites should be loaded");
     let toggles = sprites.remote_wave_inverter.as_ref().expect("Sprites should be loaded");
     let lights = sprites.remote_wave_light.as_ref().expect("Sprites should be loaded");
+    let counters = sprites.frame_counter.as_ref().expect("Sprites should be loaded");
     let body_idx = (target_ghost.target_body - TAG_BODY_1) as usize;
     let hat_idx = target_ghost.target_hat as usize;
     let target_ghost_sprite = ghost_sprites[body_idx][hat_idx].clone();
@@ -557,10 +561,20 @@ fn spawn_ui(
                 .with_scale(Vec3::new(0.5, 0.5, 1.0))
                 .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, std::f32::consts::PI / 12.0)),
         ));
+        cmd.spawn((
+            ResourceCounter::Charges,
+            Sprite::from_image(counters[(player_resources.charges - 1u8) as usize].clone()),
+            Transform::from_xyz(-710.0, 1075.0, 1.0),
+        ));
+        cmd.spawn((
+            ResourceCounter::Reputation,
+            Sprite::from_image(counters[(player_resources.reputation - 1u8) as usize].clone()),
+            Transform::from_xyz(20.0, 1075.0, 1.0),
+        ));
     });
     commands.spawn((
         Sprite::from_image(remote_base),
-        Transform::from_xyz(1425.0, -180.0, Z_POS_DEVICE_BACK)
+        Transform::from_xyz(1425.0, -188.0, Z_POS_DEVICE_BACK)
     )).with_children(|cmd| {
         cmd.spawn((
             StrengthDial,
@@ -618,6 +632,12 @@ struct FireWaveHandle;
 
 #[derive(Component)]
 struct StrengthDial;
+
+#[derive(Component)]
+enum ResourceCounter {
+    Charges,
+    Reputation,
+}
 
 fn spawn_wave_button(
     commands: &mut RelatedSpawnerCommands<'_, ChildOf>,
@@ -1040,13 +1060,18 @@ fn capture_ghosts(
     if any_ghosts_captured {
         //TODO: maybe do something with negative points?
             //Maybe you just lose instead?
-        player_resources.points = points_delta.max(0) as u8;
-        player_resources.charges -= 1;
-        if player_resources.charges == 0 && target_ghosts_exist_in_other_lanes {
+        if (player_resources.reputation as i8) + points_delta <= 0 {
+            player_resources.reputation = 0;
             on_lose.write(GameLost);
-        }
-        if !target_ghosts_exist_in_other_lanes {
-            on_win.write(GameWon);
+        } else {
+            player_resources.reputation = ((player_resources.reputation as i8) + points_delta) as u8;
+            player_resources.charges -= 1;
+            if player_resources.charges == 0 && target_ghosts_exist_in_other_lanes {
+                on_lose.write(GameLost);
+            }
+            if !target_ghosts_exist_in_other_lanes {
+                on_win.write(GameWon);
+            }
         }
     }
 }
@@ -1105,6 +1130,21 @@ fn update_wave_handle(
             std::f32::consts::PI
         };
         transform.rotation = Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, z_rot_rads);
+    }
+}
+
+fn update_counters(
+    sprites: Res<Sprites>,
+    player_resources: Res<PlayerResources>,
+    counters: Query<(&mut Sprite, &ResourceCounter)>
+) {
+    let counter_sprites = sprites.frame_counter.as_ref().expect("Sprites should be loaded");
+    for (mut sprite, counter_type) in counters {
+        let sprite_idx = match *counter_type {
+            ResourceCounter::Reputation => player_resources.reputation - 1,
+            ResourceCounter::Charges => player_resources.charges - 1,
+        } as usize;
+        sprite.image = counter_sprites[sprite_idx].clone();
     }
 }
 

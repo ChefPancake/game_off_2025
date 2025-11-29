@@ -13,15 +13,15 @@ This is the remaining work for finishing the game
     - [ ] Auto-adjust camera scale with window resizes
     - [x] Get the inverter working
         - [x] Update the sprite based on state
-    - [ ] Track number of capture charges
+    - [x] Track number of capture charges
         - [x] Count internally
-        - [ ] Display charges
+        - [x] Display charges
         - [x] Lose the game when charges hits 0 and there are still targets on the field
         - [x] Win the game when all target ghosts are captured
-    - [ ] Count reputation for each ghost gotten
+    - [x] Count reputation for each ghost gotten
         - [x] Count internally
-        - [ ] Display reputation
-        - [ ] Going below 0 ends the game? maybe
+        - [x] Display reputation
+        - [x] Going below 0 ends the game? maybe
     - [x] Make ghosts wander off the edges
     - [x] Lose the game if any target ghosts wander off the edge
     - [x] Lock up UI while ghosts are wandering
@@ -29,6 +29,7 @@ This is the remaining work for finishing the game
     - [x] Remove debug boxes
     - [ ] Respond to game win/lose
     - [ ] Get new frame
+    - [ ] Put backing 
 - [ ] Ideal
     - [ ] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen

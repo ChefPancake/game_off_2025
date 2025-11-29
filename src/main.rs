@@ -45,7 +45,7 @@ const Z_POS_GHOSTS: f32 = -8.0;
 const Z_POS_FRAME: f32 = -7.0;
 const Z_POS_DEVICE_BACK: f32 = -6.0;
 
-const GHOST_SPRITE_SCALE: f32 = 0.3;
+const GHOST_SPRITE_SCALE: f32 = 0.4;
 const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
 const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
@@ -115,6 +115,8 @@ fn main() {
         scoot_ghosts,
         update_remote_lights,
         update_remote_invert_switches,
+        update_remote_dial,
+        update_wave_handle,
         handle_remote_clicks,
         spawn_debug_clickable_boxes,
         capture_ghosts,
@@ -242,7 +244,6 @@ fn load_sprites(
 
 fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
     let mut rng = rand::rng();
-    let inverted = rng.random::<bool>();
     let mut interactions = [
         Option::<GhostInteraction>::None,
         Option::<GhostInteraction>::None,
@@ -270,8 +271,8 @@ fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
 
     return ButtonConfig {
         interactions,
-        inverted,
-        enabled: true,
+        inverted: false,
+        enabled: false,
     };
 }
 
@@ -395,7 +396,7 @@ fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
             build_button_config(&button_4),
             build_button_config(&button_5),
         ],
-        dial_strength: 2,
+        dial_strength: 1,
         unique_tags,
     }
 }
@@ -524,6 +525,7 @@ fn spawn_ui(
     let frame = sprites.frame.clone().expect("Sprites should be loaded");
     let remote_base = sprites.remote_base.clone().expect("Sprites should be loaded");
     let dial = sprites.remote_dial.as_ref().expect("Sprites should be loaded")[0].clone();
+    let handle = sprites.remote_handle.clone().expect("Sprites should be loaded");
     let waves = sprites.remote_wave_buttons.as_ref().expect("Sprites should be loaded");
     let toggles = sprites.remote_wave_inverter.as_ref().expect("Sprites should be loaded");
     let lights = sprites.remote_wave_light.as_ref().expect("Sprites should be loaded");
@@ -537,10 +539,10 @@ fn spawn_ui(
         Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
     ))
     .with_child((
-        Transform::from_xyz(0.0, 0.0, 0.0),
+        Transform::from_xyz(-345.0, 1075.0, 0.0),
         Clickable {
             clickable_type: ClickableType::CaptureGhosts,
-            bounds: Rect::new(-900.0, 1600.0, -150.0, 1800.0),
+            bounds: Rect::new(-220.0, -75.0, 220.0, 75.0),
         },
     ));
     commands.spawn((
@@ -552,20 +554,21 @@ fn spawn_ui(
             Sprite::from_image(dial),
             Transform::from_xyz(180.0, 400.0, 1.0),
         )).with_child((
-            Transform::from_xyz(0.0, 0.0, 1.0),
+            Transform::from_xyz(0.0, -80.0, 1.0),
             Clickable {
                 clickable_type: ClickableType::Dial,
-                bounds: Rect::new(-140.0, -15.0, 125.0, -280.0),
+                bounds: Rect::new(-80.0, -80.0, 80.0, 80.0),
             }
         ));
         cmd.spawn((
             FireWaveHandle,
-            Transform::from_xyz(-200.0, 0.0, 0.0),
+            Transform::from_xyz(-195.0, 400.0, 1.0),
         )).with_child((
-            Transform::from_xyz(0.0, 300.0, 0.0),
+            Transform::from_xyz(5.0, 100.0, 0.0),
+            Sprite::from_image(handle),
             Clickable {
                 clickable_type: ClickableType::FireWave,
-                bounds: Rect::new(0.0, 0.0, 200.0, 200.0),
+                bounds: Rect::new(-100.0, -100.0, 100.0, 100.0),
             }
         ));
 
@@ -583,8 +586,6 @@ fn spawn_ui(
                 toggles[0].clone(),
                 lights[0].clone(),
                 i as i8);
-
-
         }
     });
 }
@@ -795,10 +796,11 @@ fn add_to_tag_moves(tag_moves: &mut HashMap::<i8, i8>, button: &ButtonConfig) {
     if button.enabled {
         for interaction in button.interactions.iter() {
             if let Some(interaction) = interaction {
+                let invert_mod = if button.inverted { -1 } else { 1 };
                 if let Some(val) = tag_moves.get_mut(&interaction.tag) {
-                    *val += interaction.strength;
+                    *val += interaction.strength * invert_mod;
                 } else {
-                    tag_moves.insert(interaction.tag, interaction.strength);
+                    tag_moves.insert(interaction.tag, interaction.strength * invert_mod);
                 }
             }
         }
@@ -946,17 +948,13 @@ fn handle_remote_clicks(
                     if let Ok(cursor_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
                         for (clickable_transform, clickable) in query {
                             let clickable_pos = clickable_transform.translation();
-                            let width = clickable.bounds.width();
-                            let height = clickable.bounds.height();
-                            let half_width = width / 2.0;
-                            let half_height = height / 2.0;
-                            let left = clickable_pos.x - half_width;
-                            let bottom = clickable_pos.y - half_height;
+                            let left = clickable_pos.x + clickable.bounds.min.x;
+                            let right = clickable_pos.x + clickable.bounds.max.x;
+                            let bottom = clickable_pos.y + clickable.bounds.min.y;
+                            let top = clickable_pos.y + clickable.bounds.max.y;
 
-                            // this only sorta works, I think I'm not applying the scale right
-                            // but once scaling stops I can remove the scale stuff, then it should be ok
-                            if cursor_pos.x >= left && cursor_pos.x <= left + width 
-                                && cursor_pos.y >= bottom && cursor_pos.y < bottom + height 
+                            if cursor_pos.x >= left && cursor_pos.x <= right
+                                && cursor_pos.y >= bottom && cursor_pos.y <= top
                             {
                                 match clickable.clickable_type {
                                     ClickableType::Dial => { 
@@ -1062,7 +1060,7 @@ fn update_remote_invert_switches(
 ) {
     let inverter_sprites = sprites.remote_wave_inverter.as_ref().expect("Images should be loaded");
     for (mut sprite, inverter) in inverters {
-        let is_inverted = ghost_wave.buttons[inverter.button_idx as usize].enabled;
+        let is_inverted = ghost_wave.buttons[inverter.button_idx as usize].inverted;
         if is_inverted {
             sprite.image = inverter_sprites[1].clone();
         } else {
@@ -1071,63 +1069,29 @@ fn update_remote_invert_switches(
     }
 }
 
-fn update_remote_elements_new(
+fn update_remote_dial(
     sprites: Res<Sprites>,
     ghost_wave: Res<GhostWaveConfig>,
-    lights: Query<(&mut Sprite, &WaveButtonLight)>,
-    inverters: Query<(&mut Sprite, &InverterSwitch)>,
     dials: Query<&mut Sprite, With<StrengthDial>>,
-    handles: Query<&mut Sprite, With<FireWaveHandle>>,
 ) {
-    let light_sprites = sprites.remote_wave_light.as_ref().expect("Images should be loaded");
-    let inverter_sprites = sprites.remote_wave_inverter.as_ref().expect("Images should be loaded");
     let dial_sprites = sprites.remote_dial.as_ref().expect("Images should be loaded");
-    let handle_sprite = sprites.remote_handle.as_ref().expect("Images should be loaded");
-    for (mut light_sprite, light) in lights {
-        let is_enabled = ghost_wave.buttons[light.button_idx as usize].enabled;
-        if is_enabled {
-            light_sprite.image = light_sprites[1].clone();
-        } else {
-            light_sprite.image = light_sprites[0].clone();
-        }
+    for mut sprite in dials {
+        let dial_idx = (ghost_wave.dial_strength - 1) as usize;
+        sprite.image = dial_sprites[dial_idx].clone();
     }
-
 }
 
-fn update_remote_elements(
-    sprites: Res<Sprites>,
-    ghost_wave: Res<GhostWaveConfig>,
-    query: Query<&Clickable>,
-    parents: Query<(&mut Sprite, &Children)>,
+fn update_wave_handle(
+    ui_enabled: Res<UIEnabled>,
+    handles: Query<&mut Transform, With<FireWaveHandle>>
 ) {
-    let waves = sprites.remote_wave_buttons.as_ref().expect("Images should be loaded");
-    let dial = sprites.remote_dial.as_ref().expect("Images should be loaded");
-    for (mut sprite, children) in parents {
-        for child in children.iter() {
-            if let Ok(clickable) = query.get(child) {
-                if let ClickableType::WaveEnable(idx) = clickable.clickable_type {
-                    let idx = idx as usize;
-                    let is_enabled = ghost_wave.buttons[idx].enabled;
-                    // TODO: fix this to light up the individual lights
-                    sprite.image = if is_enabled {
-                        waves[idx].clone()
-                    } else {
-                        waves[idx].clone()
-                    };
-                }
-                if clickable.clickable_type == ClickableType::Dial {
-                    let dial_idx = (ghost_wave.dial_strength - 1) as usize;
-                    sprite.image = dial[dial_idx].clone();
-                }
-                if let ClickableType::WaveInvert(idx) = clickable.clickable_type {
-                    let idx = idx as usize;
-                    let is_inverted = ghost_wave.buttons[idx].inverted;
-                    // sprite.image = if is_inverted {
-                    //     ...
-                    // }
-                }
-            }
-        }
+    for mut transform in handles {
+        let z_rot_rads = if ui_enabled.enabled {
+            0.0
+        } else {
+            std::f32::consts::PI
+        };
+        transform.rotation = Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, z_rot_rads);
     }
 }
 

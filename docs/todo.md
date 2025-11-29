@@ -6,13 +6,13 @@ This is the remaining work for finishing the game
     - [ ] Fix ghost spawning
         - It seems like the target ghost is not on the field at all
     - [x] Make firing the wave a click instead of the spacebar
-    - [ ] Pull in the new images
-        - [ ] Make sure that all clickable areas are now accurate
-        - [ ] Rebuild the new buttons
-            - Things should be separated out now so they'll have to be dynamically constructed
-        - [ ] Audo-adjust camera scale with window resizes
+    - [x] Pull in the new images
+    - [x] Make sure that all clickable areas are now accurate
+    - [x] Rebuild the new buttons
+        - Things should be separated out now so they'll have to be dynamically constructed
+    - [ ] Auto-adjust camera scale with window resizes
     - [ ] Get the inverter working
-        - [ ] Update the sprite based on state
+        - [x] Update the sprite based on state
     - [ ] Track number of capture charges
         - [x] Count internally
         - [ ] Display charges

@@ -10,7 +10,7 @@ This is the remaining work for finishing the game
     - [x] Make sure that all clickable areas are now accurate
     - [x] Rebuild the new buttons
         - Things should be separated out now so they'll have to be dynamically constructed
-    - [ ] Auto-adjust camera scale with window resizes
+    - [x] Auto-adjust camera scale with window resizes
     - [x] Get the inverter working
         - [x] Update the sprite based on state
     - [x] Track number of capture charges

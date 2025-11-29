@@ -1,7 +1,10 @@
 use bevy::{
     ecs::relationship::RelatedSpawnerCommands,
     prelude::*,
-    window::PrimaryWindow,
+    window::{
+        PrimaryWindow,
+        WindowResized,
+    }
 };
 use rand::prelude::*;
 use std::collections::HashMap;
@@ -29,9 +32,13 @@ const TAG_BODY_6: i8 = 19;
 const TAG_BODY_7: i8 = 20;
 const TAG_BODY_8: i8 = 21;
 
+const GAME_AREA_WIDTH: f32 = 3840.0;
+const GAME_AREA_HEIGHT: f32 = 2399.0;
+const GAME_AREA_RATIO: f32 = GAME_AREA_WIDTH / GAME_AREA_HEIGHT;
+
 const LANE_LAYOUT_LEFT: f32 = -1635.5;
-const LANE_LAYOUT_BOTTOM: f32 = -900.0;
-const LANE_LAYOUT_HEIGHT: f32 = 1500.0;
+const LANE_LAYOUT_BOTTOM: f32 = -800.0;
+const LANE_LAYOUT_HEIGHT: f32 = 1400.0;
 const LANE_LAYOUT_LANE_WIDTH: f32 = 284.5;
 const LANE_LAYOUT_LANE_COUNT: u8 = 9;
 const LANE_LAYOUT_MARGIN: f32 = 100.0;
@@ -106,7 +113,7 @@ fn main() {
     .add_systems(Startup, (
         spawn_ui,
         spawn_camera,
-        spawn_ghosts,
+        spawn_ghosts_new,
     ))
     .add_systems(Update, (
         animate_ghosts,
@@ -121,6 +128,7 @@ fn main() {
         capture_ghosts,
         handle_ui_enabled,
         handle_game_end,
+        handle_window_resized,
     ))
     .run();
 }
@@ -153,14 +161,9 @@ struct PlayerResources {
     reputation: u8,
 }
 
-#[derive(Clone)]
-struct GhostInteraction {
-    tag: i8,
-    strength: i8,
-}
-
 struct ButtonConfig {
-    interactions: [Option<GhostInteraction>; 4],
+    interactions: [Option<i8>; 4],
+    strength: i8,
     inverted: bool,
     enabled: bool,
 }
@@ -169,13 +172,28 @@ struct ButtonConfig {
 struct GhostWaveConfig {
     buttons: [ButtonConfig; 5],
     dial_strength: u8,
-    unique_tags: Vec<i8>
+}
+
+#[derive(Component, Copy, Clone)]
+struct GhostTags {
+    body_tag: i8,
+    hat_tag: i8,
+}
+impl GhostTags {
+    fn new(body: i8, hat: i8) -> GhostTags {
+        GhostTags {
+            body_tag: body,
+            hat_tag: hat,
+        }
+    }
 }
 
 #[derive(Resource)]
 struct TargetGhostTags {
-    target_body: i8,
-    target_hat: i8,
+    target: GhostTags,
+    others: [Option<GhostTags>; 8],
+    all_tags: [Option<i8>; 8],
+    other_tags: [Option<i8>; 8],
 }
 
 #[derive(Component)]
@@ -244,162 +262,67 @@ fn load_sprites(
     sprites.particles = Some(wave_particles.try_into().expect("Vec should have 5 elements"));
 }
 
-fn build_button_config(selected_tags: &[i8; 4]) -> ButtonConfig {
+fn build_ghost_wave_config(
+    target_ghosts: &TargetGhostTags,
+) -> GhostWaveConfig {
     let mut rng = rand::rng();
-    let mut interactions = [
-        Option::<GhostInteraction>::None,
-        Option::<GhostInteraction>::None,
-        Option::<GhostInteraction>::None,
-        Option::<GhostInteraction>::None,
+    let mut other_tags: Vec<i8> = target_ghosts.other_tags.iter().filter_map(|x| *x).collect();
+    other_tags.shuffle(&mut rng);
+    //TODO: this only works as hardcoded because we "know" there are exactly 4 other tags
+    let alt_1 = other_tags.pop().unwrap();
+    let alt_2 = other_tags.pop().unwrap();
+    let alt_3 = other_tags.pop().unwrap();
+    let alt_4 = other_tags.pop().unwrap();
+    let button_1 = [
+        Some(target_ghosts.target.body_tag),
+        Some(alt_1),
+        None,
+        None,
+    ];
+    let button_2 = [
+        Some(target_ghosts.target.body_tag),
+        Some(alt_2),
+        None,
+        None,
+    ];
+    let button_3 = [
+        Some(alt_3),
+        None,
+        None,
+        None,
+    ];
+    let button_4 = [
+        Some(alt_4),
+        None,
+        None,
+        None,
+    ];
+    let button_5 = [
+        Some(target_ghosts.target.hat_tag),
+        None,
+        None,
+        None,
     ];
 
-    for i in 0..selected_tags.len() {
-        let tag = selected_tags[i];
-        if tag == -1 {
-            continue;
-        }
-        //we want any value between -3 and 3 except 0
-        let mut strength = rng.random_range(-1..=0);
-        if strength >= 0 {
-            strength += 1;
-        }
-        interactions[i] = 
-            Some(
-            GhostInteraction {
-                tag,
-                strength,
-            });
-    }
-
-    return ButtonConfig {
-        interactions,
-        inverted: false,
-        enabled: false,
+    return GhostWaveConfig {
+        buttons: [
+            build_button_config(button_1, &mut rng),
+            build_button_config(button_2, &mut rng),
+            build_button_config(button_3, &mut rng),
+            build_button_config(button_4, &mut rng),
+            build_button_config(button_5, &mut rng),
+        ],
+        dial_strength: 1,
     };
 }
 
-fn build_ghost_wave_config(target_ghost: &TargetGhostTags) -> GhostWaveConfig {
-    let mut rng = rand::rng();
-    let mut all_hats = vec![
-        TAG_HAT_1,
-        TAG_HAT_2,
-        TAG_HAT_3,
-        TAG_HAT_4,
-        TAG_HAT_5,
-        TAG_HAT_6,
-        TAG_HAT_7,
-        TAG_HAT_8,
-        TAG_HAT_9,
-        TAG_HAT_10,
-        TAG_HAT_11,
-        TAG_HAT_12,
-        TAG_HAT_13,
-        TAG_HAT_14,
-    ];
-    all_hats.shuffle(&mut rng);
-    let mut all_ghosts = vec![
-        TAG_BODY_1,
-        TAG_BODY_2,
-        TAG_BODY_3,
-        TAG_BODY_4,
-        TAG_BODY_5,
-        TAG_BODY_6,
-        TAG_BODY_7,
-        TAG_BODY_8,
-    ];
-    all_ghosts.shuffle(&mut rng);
-
-    let mut selected_hats = Vec::<i8>::new();
-    let mut selected_ghosts = Vec::<i8>::new();
-
-    let mut i = 0usize;
-    loop {
-        let mut need_more_tags = false;
-        if selected_hats.len() < 3 { //TODO: configure the amount here by the current level
-            need_more_tags = true;
-
-            let hat = all_hats[i];
-            if hat != target_ghost.target_hat {
-                selected_hats.push(hat);
-            }
-        }
-        if selected_ghosts.len() < 3 { //TODO: configure the amount here by the current level
-            need_more_tags = true;
-
-            let ghost = all_ghosts[i];
-            if ghost != target_ghost.target_body {
-                selected_ghosts.push(ghost);
-            }
-        }
-        i += 1;
-        if !need_more_tags {
-            break;
-        }
-    }
-    let mut tag_pool = Vec::<i8>::new();
-    tag_pool.extend(&selected_hats);
-    tag_pool.extend(&selected_hats);
-    tag_pool.extend(&selected_ghosts);
-    tag_pool.extend(&selected_ghosts);
-    tag_pool.shuffle(&mut rng);
-
-    //probably treat the two primary buttons differently, then build the rest from the scraps
-    //each button is going to do 1-3 things to start with
-    //at least two of those buttons will move the main target by one of their tags, as well as one other
-    //unrelated tag.
-    //1 + 2 + 2 + 3 + 3 = 11
-    // build them, then shuffle them to stuff into the final struct
-    let mut button_1 = [-1i8;4];
-    let mut button_2 = [-1i8;4];
-    let mut button_3 = [-1i8;4];
-    let mut button_4 = [-1i8;4];
-    let mut button_5 = [-1i8;4];
-    let mut spare_tags = Vec::<i8>::new();
-    //TODO: configure these based on the current level
-    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_1);
-    select_button_interactions(3, &mut tag_pool, &mut spare_tags, &mut button_2);
-    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_3);
-    select_button_interactions(2, &mut tag_pool, &mut spare_tags, &mut button_4);
-    select_button_interactions(1, &mut tag_pool, &mut spare_tags, &mut button_5);
-
-    let mut unique_tags = Vec::<i8>::new();
-
-    for tag in &button_1 {
-        if *tag != -1 && !unique_tags.contains(tag) {
-            unique_tags.push(*tag);
-        }
-    }
-    for tag in &button_2 {
-        if *tag != -1 && !unique_tags.contains(tag) {
-            unique_tags.push(*tag);
-        }
-    }
-    for tag in &button_3 {
-        if *tag != -1 && !unique_tags.contains(tag) {
-            unique_tags.push(*tag);
-        }
-    }
-    for tag in &button_4 {
-        if *tag != -1 && !unique_tags.contains(tag) {
-            unique_tags.push(*tag);
-        }
-    }
-    for tag in &button_5 {
-        if *tag != -1 && !unique_tags.contains(tag) {
-            unique_tags.push(*tag);
-        }
-    }
-
-    GhostWaveConfig {
-        buttons: [
-            build_button_config(&button_1),
-            build_button_config(&button_2),
-            build_button_config(&button_3),
-            build_button_config(&button_4),
-            build_button_config(&button_5),
-        ],
-        dial_strength: 1,
-        unique_tags,
+fn build_button_config(tags: [Option<i8>; 4], rng: &mut ThreadRng) -> ButtonConfig {
+    let strength = if (0..=1).choose(rng).unwrap() == 0 { -1i8 } else { 1i8 };
+    return ButtonConfig {
+        interactions: tags.clone(),
+        strength,
+        inverted: false,
+        enabled: false,
     }
 }
 
@@ -420,14 +343,62 @@ fn select_button_interactions(n: usize, tag_pool: &mut Vec<i8>, spare_tags: &mut
     }
 }
 
+//TODO: randomly generate this instead based on current level
 fn choose_target_ghosts() -> TargetGhostTags {
     let mut rng = rand::rng();
-    let hat = (TAG_HAT_1..=TAG_HAT_8).choose(&mut rng).unwrap();
-    let ghost = (TAG_BODY_1..=TAG_BODY_8).choose(&mut rng).unwrap();
-    println!("body: {}; hat: {}", ghost, hat);
+    let mut hats = (TAG_HAT_1..=TAG_HAT_14).collect::<Vec<i8>>();
+    hats.shuffle(&mut rng);
+    let target_hat = hats.pop().unwrap();
+    let variant_hat_1 = hats.pop().unwrap();
+    let variant_hat_2 = hats.pop().unwrap();
+
+    let mut bodies = (TAG_BODY_1..=TAG_BODY_8).collect::<Vec<i8>>();
+    bodies.shuffle(&mut rng);
+    let target_body = bodies.pop().unwrap();
+    let variant_body_1 = bodies.pop().unwrap();
+    let variant_body_2 = bodies.pop().unwrap();
+
+    println!("target: body: {}; hat: {}", target_body, target_hat);
+    let variant_1 = GhostTags::new(variant_body_1, target_hat);
+    let variant_2 = GhostTags::new(target_body, variant_hat_1);
+    let variant_3 = GhostTags::new(variant_body_2, variant_hat_1);
+    let variant_4 = GhostTags::new(variant_body_1, variant_hat_2);
+
     return TargetGhostTags {
-        target_body: ghost,
-        target_hat: hat,
+        target: GhostTags {
+            body_tag: target_body,
+            hat_tag: target_hat,
+        },
+        others: [
+            Some(variant_1),
+            Some(variant_2),
+            Some(variant_3),
+            Some(variant_4),
+            None,
+            None,
+            None,
+            None,
+        ],
+        all_tags: [
+            Some(target_body),
+            Some(target_hat),
+            Some(variant_body_1),
+            Some(variant_body_2),
+            Some(variant_hat_1),
+            Some(variant_hat_2),
+            None,
+            None,
+        ],
+        other_tags: [
+            Some(variant_body_1),
+            Some(variant_body_2),
+            Some(variant_hat_1),
+            Some(variant_hat_2),
+            None,
+            None,
+            None,
+            None,
+        ],
     };
 }
 
@@ -495,12 +466,6 @@ struct GhostScooting {
     movement_speed: f32,
 }
 
-#[derive(Component)]
-struct GhostTags {
-    body_tag: i8,
-    hat_tag: i8,
-}
-
 #[derive(PartialEq, Eq)]
 enum ClickableType {
     Dial,
@@ -535,8 +500,8 @@ fn spawn_ui(
     let toggles = sprites.remote_wave_inverter.as_ref().expect("Sprites should be loaded");
     let lights = sprites.remote_wave_light.as_ref().expect("Sprites should be loaded");
     let counters = sprites.frame_counter.as_ref().expect("Sprites should be loaded");
-    let body_idx = (target_ghost.target_body - TAG_BODY_1) as usize;
-    let hat_idx = target_ghost.target_hat as usize;
+    let body_idx = (target_ghost.target.body_tag - TAG_BODY_1) as usize;
+    let hat_idx = target_ghost.target.hat_tag as usize;
     let target_ghost_sprite = ghost_sprites[body_idx][hat_idx].clone();
     commands.spawn((
         Sprite::from_image(background),
@@ -563,12 +528,12 @@ fn spawn_ui(
         ));
         cmd.spawn((
             ResourceCounter::Charges,
-            Sprite::from_image(counters[(player_resources.charges - 1u8) as usize].clone()),
+            Sprite::from_image(counters[(player_resources.charges) as usize].clone()),
             Transform::from_xyz(-710.0, 1075.0, 1.0),
         ));
         cmd.spawn((
             ResourceCounter::Reputation,
-            Sprite::from_image(counters[(player_resources.reputation - 1u8) as usize].clone()),
+            Sprite::from_image(counters[(player_resources.reputation) as usize].clone()),
             Transform::from_xyz(20.0, 1075.0, 1.0),
         ));
     });
@@ -681,54 +646,39 @@ fn spawn_wave_button(
     });
 }
 
-fn spawn_ghosts(
+fn spawn_ghosts_new(
     sprites: Res<Sprites>,
+    target_ghost: Res<TargetGhostTags>,
     lanes: Res<LaneLayout>,
-    ghost_wave: Res<GhostWaveConfig>,
     mut commands: Commands,
 ) {
-    let sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
-
-    // let's make 3 ghosts in each lane
-    // each of them will consist of one type and one hat
-
-    // need to randomly but evenly distribute the tags we know about across all lanes by repeating
-    // the set of unique tags
-
-    let mut hats = Vec::<i8>::new();
-    let mut bodies = Vec::<i8>::new();
-    for tag in &ghost_wave.unique_tags {
-        if let Some(tag_type) = get_tag_type(*tag) {
-            if tag_type == TagType::Body {
-                bodies.push(*tag);
-            } else {
-                hats.push(*tag);
-            }
-        }
-    }
     let mut rng = rand::rng();
-    //repeat hats and ghosts enough times to have enough for the expected ghosts
-    let hats_to_repeat = hats.clone();
-    let times_to_repeat = EXPECTED_TOTAL_GHOSTS.div_ceil(hats.len() as u8);
-    for _ in 0..times_to_repeat {
-        hats.extend(&hats_to_repeat);
-    }
-    let bodies_to_repeat = bodies.clone();
-    let times_to_repeat = EXPECTED_TOTAL_GHOSTS.div_ceil(bodies.len() as u8);
-    for _ in 0..times_to_repeat {
-        bodies.extend(&bodies_to_repeat);
-    }
+    // Choose 3 lanes to get the target, then randomly distribute the rest of the ghosts across the
+    // rest.
+    // Or just grab every variant of ghost, multiply by 3 (since we know we have 5 and need 15) and
+    // randomly distribute them. We may get 2 or even 3 of the target in one lane and that's ok
+    //
+    // TODO: generate this randomly based on the lane layout and the number of ghost variants
 
-    hats.shuffle(&mut rng);
-    bodies.shuffle(&mut rng);
+    let mut ghosts = Vec::new();
+    for _ in 0..3 {
+        ghosts.push(target_ghost.target);
+        ghosts.push(target_ghost.others[0].unwrap());
+        ghosts.push(target_ghost.others[1].unwrap());
+        ghosts.push(target_ghost.others[2].unwrap());
+        ghosts.push(target_ghost.others[3].unwrap());
+    }
+    ghosts.shuffle(&mut rng);
+    let ghost_sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
 
     for lane_index in 0..LANE_LAYOUT_SPAWN_LANES {
         for _ in 0..3 {
             let lane_index = lane_index + LANE_LAYOUT_BUFFER_LANES;
-            let hat_tag = hats.pop().expect("Should have enough hat tags to share");
-            let ghost_tag = bodies.pop().expect("Should have enough body tags to share");
             let pos = get_random_point_in_rect(&lanes.margined_lanes[lane_index as usize]);
-            let sprite = sprites[(ghost_tag - TAG_BODY_1) as usize][(hat_tag - TAG_HAT_1) as usize].clone();
+            let ghost = ghosts.pop().unwrap();
+            let body_idx = (ghost.body_tag - TAG_BODY_1) as usize;
+            let hat_idx = (ghost.hat_tag - TAG_HAT_1) as usize;
+            let sprite = ghost_sprites[body_idx][hat_idx].clone();
             let radius_x = 20.0 + rand::random::<f32>() * 10.0;
             let omega_x = std::f32::consts::PI / 8.0 + rand::random::<f32>() * std::f32::consts::PI / 4.0;
             let theta_x = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
@@ -740,10 +690,7 @@ fn spawn_ghosts(
                 Ghost,
                 Transform::from_xyz(pos.x, pos.y, 0.0),
                 Visibility::default(),
-                GhostTags {
-                    body_tag: ghost_tag,
-                    hat_tag: hat_tag,
-                },
+                ghost,
                 GhostLanePosition {
                     lane: lane_index,
                 },
@@ -828,12 +775,12 @@ fn animate_ghosts(
 fn add_to_tag_moves(tag_moves: &mut HashMap::<i8, i8>, button: &ButtonConfig) {
     if button.enabled {
         for interaction in button.interactions.iter() {
-            if let Some(interaction) = interaction {
+            if let Some(tag) = interaction {
                 let invert_mod = if button.inverted { -1 } else { 1 };
-                if let Some(val) = tag_moves.get_mut(&interaction.tag) {
-                    *val += interaction.strength * invert_mod;
+                if let Some(val) = tag_moves.get_mut(tag) {
+                    *val += button.strength * invert_mod;
                 } else {
-                    tag_moves.insert(interaction.tag, interaction.strength * invert_mod);
+                    tag_moves.insert(*tag, button.strength * invert_mod);
                 }
             }
         }
@@ -880,8 +827,8 @@ fn begin_scooting_ghosts(
             if move_acc != 0 {
                 // apply the move component 
                 let is_target = 
-                    ghost_tags.body_tag == target_ghost.target_body
-                    && ghost_tags.hat_tag == target_ghost.target_hat;
+                    ghost_tags.body_tag == target_ghost.target.body_tag
+                    && ghost_tags.hat_tag == target_ghost.target.hat_tag;
                 let ghost_lane = ghost_lane_pos.lane as i8;
                 let new_lane_idx = ghost_lane + move_acc;
                 if new_lane_idx == ghost_lane {
@@ -1039,8 +986,8 @@ fn capture_ghosts(
     let mut target_ghosts_exist_in_other_lanes = false;
     for (entity, ghost_lane, ghost_tags) in ghosts {
         let is_target = 
-            ghost_tags.body_tag == target.target_body
-            && ghost_tags.hat_tag == target.target_hat;
+            ghost_tags.body_tag == target.target.body_tag
+            && ghost_tags.hat_tag == target.target.hat_tag;
         if ghost_lane.lane == 4 { //5th, center lane
             any_ghosts_captured = true;
             if is_target {
@@ -1060,12 +1007,12 @@ fn capture_ghosts(
     if any_ghosts_captured {
         //TODO: maybe do something with negative points?
             //Maybe you just lose instead?
+            player_resources.charges -= 1;
         if (player_resources.reputation as i8) + points_delta <= 0 {
             player_resources.reputation = 0;
             on_lose.write(GameLost);
         } else {
             player_resources.reputation = ((player_resources.reputation as i8) + points_delta) as u8;
-            player_resources.charges -= 1;
             if player_resources.charges == 0 && target_ghosts_exist_in_other_lanes {
                 on_lose.write(GameLost);
             }
@@ -1167,3 +1114,33 @@ fn handle_game_end(
         println!("you lose!");
     }
 }
+
+fn handle_window_resized(
+    mut on_resize: MessageReader<WindowResized>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras: Query<&mut Transform, With<Camera>>,
+) {
+    if on_resize.is_empty() {
+        return;
+    }
+    on_resize.clear();
+    let window = windows.single().expect("The primary window should exist");
+
+    for mut camera_transform in cameras {
+        // compare the window ratio against the background ratio to select which dimension is
+        // the limiter
+        let win_res = window.resolution.size();
+        let win_ratio = win_res.x / win_res.y;
+        // a ratio being greater than another indicates that it is wider than the other. A
+        // wider ratio will be more limited by its height. The inverse is also true.
+
+        if win_ratio > GAME_AREA_RATIO {
+            let scale = GAME_AREA_HEIGHT / win_res.y ;
+            camera_transform.scale = Vec3::new(scale, scale, 1.0);
+        } else {
+            let scale = GAME_AREA_WIDTH / win_res.x;
+            camera_transform.scale = Vec3::new(scale, scale, 1.0);
+        }
+    }        
+}
+

@@ -95,7 +95,6 @@ fn main() {
     .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
-    .insert_resource(BoxesMade { val: false })
     .insert_resource(UIEnabled { enabled: true })
     .insert_resource(PlayerResources { charges: 3, points: 0 })
     .add_message::<CaptureGhostsInitialized>()
@@ -107,7 +106,6 @@ fn main() {
         spawn_ui,
         spawn_camera,
         spawn_ghosts,
-        spawn_debug_lane_boxes,
     ))
     .add_systems(Update, (
         animate_ghosts,
@@ -118,7 +116,6 @@ fn main() {
         update_remote_dial,
         update_wave_handle,
         handle_remote_clicks,
-        spawn_debug_clickable_boxes,
         capture_ghosts,
         handle_ui_enabled,
         handle_game_end,
@@ -178,6 +175,9 @@ struct TargetGhostTags {
     target_body: i8,
     target_hat: i8,
 }
+
+#[derive(Component)]
+struct TargetGhostDisplay;
 
 fn load_sprites(
     assets: Res<AssetServer>,
@@ -519,8 +519,10 @@ struct Clickable {
 
 fn spawn_ui(
     sprites: Res<Sprites>,
+    target_ghost: Res<TargetGhostTags>,
     mut commands: Commands,
 ) {
+    let ghost_sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
     let background = sprites.background.clone().expect("Sprites should be loaded");
     let frame = sprites.frame.clone().expect("Sprites should be loaded");
     let remote_base = sprites.remote_base.clone().expect("Sprites should be loaded");
@@ -529,22 +531,33 @@ fn spawn_ui(
     let waves = sprites.remote_wave_buttons.as_ref().expect("Sprites should be loaded");
     let toggles = sprites.remote_wave_inverter.as_ref().expect("Sprites should be loaded");
     let lights = sprites.remote_wave_light.as_ref().expect("Sprites should be loaded");
+    let body_idx = (target_ghost.target_body - TAG_BODY_1) as usize;
+    let hat_idx = target_ghost.target_hat as usize;
+    let target_ghost_sprite = ghost_sprites[body_idx][hat_idx].clone();
     commands.spawn((
         Sprite::from_image(background),
         Transform::from_xyz(0.0, 0.0, Z_POS_BACKGROUND)
     ));
-    //TODO: fix position of this clickable
     commands.spawn((
         Sprite::from_image(frame),
         Transform::from_xyz(0.0, 0.0, Z_POS_FRAME)
     ))
-    .with_child((
-        Transform::from_xyz(-345.0, 1075.0, 0.0),
-        Clickable {
-            clickable_type: ClickableType::CaptureGhosts,
-            bounds: Rect::new(-220.0, -75.0, 220.0, 75.0),
-        },
-    ));
+    .with_children(|cmd| {
+        cmd.spawn((
+            Transform::from_xyz(-345.0, 1075.0, 0.0),
+            Clickable {
+                clickable_type: ClickableType::CaptureGhosts,
+                bounds: Rect::new(-220.0, -75.0, 220.0, 75.0),
+            },
+        ));
+        cmd.spawn((
+            TargetGhostDisplay,
+            Sprite::from_image(target_ghost_sprite),
+            Transform::from_xyz(-1550.0, 830.0, 1.0)
+                .with_scale(Vec3::new(0.5, 0.5, 1.0))
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, std::f32::consts::PI / 12.0)),
+        ));
+    });
     commands.spawn((
         Sprite::from_image(remote_base),
         Transform::from_xyz(1425.0, -180.0, Z_POS_DEVICE_BACK)
@@ -1093,69 +1106,6 @@ fn update_wave_handle(
         };
         transform.rotation = Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, z_rot_rads);
     }
-}
-
-fn spawn_debug_lane_boxes(
-    mut commands: Commands,
-    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
-) {
-    let center_y = LANE_LAYOUT_BOTTOM
-        + (LANE_LAYOUT_HEIGHT / 2.0);
-    for i in 0..LANE_LAYOUT_LANE_COUNT {
-        let center_x = LANE_LAYOUT_LEFT + (i as f32 + 0.5) * LANE_LAYOUT_LANE_WIDTH;
-        let mut gizmo = GizmoAsset::new();
-        gizmo.rect_2d(
-            Isometry2d::from_xy(center_x, center_y),
-            Vec2::new(LANE_LAYOUT_LANE_WIDTH, LANE_LAYOUT_HEIGHT),
-            Color::WHITE);
-        commands.spawn(
-            Gizmo {
-                handle: gizmo_assets.add(gizmo),
-                line_config: GizmoLineConfig {
-                    width: 2.,
-                    ..default()
-                },
-                ..default()
-            }
-        );
-    }
-}
-
-#[derive(Resource)]
-struct BoxesMade {
-    val: bool
-}
-
-fn spawn_debug_clickable_boxes(
-    mut commands: Commands,
-    clickables: Query<(Entity, &Clickable)>,
-    mut boxes_made: ResMut<BoxesMade>,
-    mut gizmo_assets: ResMut<Assets<GizmoAsset>>,
-) {
-    if boxes_made.val {
-        return;
-    }
-    for (entity, clickable) in clickables {
-        let rect = clickable.bounds;
-        let mut gizmo = GizmoAsset::new();
-        let half_width = rect.width() / 2.0;
-        let half_height = rect.height() / 2.0;
-        gizmo.rect_2d(
-            Isometry2d::from_xy(rect.min.x + half_width, rect.min.y + half_height),
-            Vec2::new(rect.width(), rect.height()),
-            Color::BLACK);
-        commands.entity(entity)
-            .insert(
-                Gizmo {
-                    handle: gizmo_assets.add(gizmo),
-                    line_config: GizmoLineConfig {
-                        width: 2.0,
-                        ..default()
-                    },
-                    ..default()
-                });
-    }
-    boxes_made.val = true;
 }
 
 fn handle_ui_enabled(

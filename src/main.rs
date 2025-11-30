@@ -128,7 +128,7 @@ fn main() {
     .add_systems(Startup, (
         spawn_ui,
         spawn_camera,
-        spawn_ghosts_new,
+        spawn_ghosts,
     ))
     .add_systems(Update, (
         animate_ghosts,
@@ -282,6 +282,8 @@ fn load_sprites(
 
     sprites.win_splash = Some(assets.load("ui/Success.png"));
     sprites.lose_splash = Some(assets.load("ui/Fail.png"));
+
+    sprites.shadow = Some(assets.load("ui/Shadow.png"));
 }
 
 fn build_ghost_wave_config(
@@ -668,7 +670,7 @@ fn spawn_wave_button(
     });
 }
 
-fn spawn_ghosts_new(
+fn spawn_ghosts(
     sprites: Res<Sprites>,
     target_ghost: Res<TargetGhostTags>,
     lanes: Res<LaneLayout>,
@@ -692,6 +694,7 @@ fn spawn_ghosts_new(
     }
     ghosts.shuffle(&mut rng);
     let ghost_sprites = sprites.ghosts.as_ref().expect("Sprites should be loaded");
+    let shadow_sprite = sprites.shadow.as_ref().expect("Sprites should be loaded");
 
     for lane_index in 0..LANE_LAYOUT_SPAWN_LANES {
         for _ in 0..3 {
@@ -701,35 +704,51 @@ fn spawn_ghosts_new(
             let body_idx = (ghost.body_tag - TAG_BODY_1) as usize;
             let hat_idx = (ghost.hat_tag - TAG_HAT_1) as usize;
             let sprite = ghost_sprites[body_idx][hat_idx].clone();
-            let radius_x = 20.0 + rand::random::<f32>() * 10.0;
+            let radius_x = 100.0 + rand::random::<f32>() * 50.0;
             let omega_x = std::f32::consts::PI / 8.0 + rand::random::<f32>() * std::f32::consts::PI / 4.0;
             let theta_x = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
 
-            let radius_y = 40.0 + rand::random::<f32>() * 20.0;
+            let radius_y = 120.0 + rand::random::<f32>() * 80.0;
             let omega_y = std::f32::consts::PI / 4.0 + rand::random::<f32>() * std::f32::consts::PI / 2.0;
             let theta_y = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
             commands.spawn((
                 Ghost,
-                Transform::from_xyz(pos.x, pos.y, 0.0),
-                Visibility::default(),
+                Transform::from_xyz(pos.x, pos.y, Z_POS_GHOSTS)
+                    .with_scale(Vec3::new(GHOST_SPRITE_SCALE, GHOST_SPRITE_SCALE, 1.0)),
                 ghost,
                 GhostLanePosition {
                     lane: lane_index,
                 },
+                Visibility::Visible,
             ))
-            .with_child((
-                Sprite::from_image(sprite),
-                Transform::from_xyz(0.0, 10.0, Z_POS_GHOSTS).with_scale(Vec3::new(GHOST_SPRITE_SCALE, GHOST_SPRITE_SCALE, 1.0)),
-                GhostAnimationLoop {
-                    theta_x,
-                    omega_x,
-                    radius_x,
-                    theta_y,
-                    omega_y,
-                    radius_y,
-                    offset_y: 45.0,
-                }
-            ));
+            .with_children(|cmd| {
+                cmd.spawn((
+                    Sprite::from_image(shadow_sprite.clone()),
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                    GhostAnimationLoop {
+                        theta_x,
+                        omega_x,
+                        radius_x,
+                        theta_y,
+                        omega_y,
+                        radius_y: 0.0,
+                        offset_y: 0.0,
+                    }
+                ));
+                cmd.spawn((
+                    Sprite::from_image(sprite),
+                    Transform::from_xyz(0.0, 500.0, 1.0),
+                    GhostAnimationLoop {
+                        theta_x,
+                        omega_x,
+                        radius_x,
+                        theta_y,
+                        omega_y,
+                        radius_y,
+                        offset_y: 500.0,
+                    }
+                ));
+            });
         }
     }
 }
@@ -782,15 +801,15 @@ fn animate_ghosts(
     ghosts: Query<(&mut Transform, &mut GhostAnimationLoop)>,
     time: Res<Time>,
 ) {
-    const GHOST_SQUIDGE_RADIUS: f32 = 0.01;
+    const GHOST_SQUIDGE_RADIUS: f32 = 0.03;
 
     for (mut transform, mut ghost_anim) in ghosts {
         ghost_anim.theta_y += ghost_anim.omega_y * time.delta_secs();
         ghost_anim.theta_x += ghost_anim.omega_x * time.delta_secs();
         transform.translation.y = ghost_anim.theta_y.sin() * ghost_anim.radius_y + ghost_anim.offset_y;
         transform.translation.x = ghost_anim.theta_x.sin() * ghost_anim.radius_x;
-        transform.scale.x = GHOST_SPRITE_SCALE + (ghost_anim.theta_y * 2.0).sin() * GHOST_SQUIDGE_RADIUS;
-        transform.scale.y = GHOST_SPRITE_SCALE + (ghost_anim.theta_y * 2.0 + std::f32::consts::PI / 2.0).sin() * GHOST_SQUIDGE_RADIUS;
+        transform.scale.x = 1.0 + (ghost_anim.theta_y * 2.0).sin() * GHOST_SQUIDGE_RADIUS;
+        transform.scale.y = 1.0 + (ghost_anim.theta_y * 2.0 + std::f32::consts::PI / 2.0).sin() * GHOST_SQUIDGE_RADIUS;
     }
 }
 

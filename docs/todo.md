@@ -2,7 +2,7 @@
 
 This is the remaining work for finishing the game
 
-- [ ] MVP
+- [x] MVP
     - [x] Fix ghost spawning
         - It seems like the target ghost is not on the field at all
     - [x] Make firing the wave a click instead of the spacebar
@@ -32,6 +32,7 @@ This is the remaining work for finishing the game
     - [x] Get new frame
     - [x] Put backing 
 - [ ] Ideal
+    - [ ] Reformat images to be smaller
     - [x] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen
     - [ ] Make Levels
@@ -39,8 +40,10 @@ This is the remaining work for finishing the game
     - [ ] Make ghost particles
     - [ ] Make wave particles
     - [ ] Track number of fired waves, dish out bonuses at level end
-    - [ ] Add ghost shadows
+    - [x] Add ghost shadows
         - Make sure they're on a lower z_pos than the ghosts so they never sit on top of each other
+    - [ ] Add Z-sorting for ghosts in the field
+        - make their z component a function of their y component
     - [ ] Add flash for capture
     - [ ] Add music
     - [ ] Add sounds

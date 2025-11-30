@@ -4,6 +4,7 @@ use bevy::{
     window::{
         PrimaryWindow,
         WindowResized,
+        WindowResolution,
     }
 };
 use rand::prelude::*;
@@ -57,6 +58,10 @@ const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
 const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
 
+const WINDOW_RESOLUTION_X: u32 = 960;
+const WINDOW_RESOLUTION_Y: u32 = 600; 
+
+
 const GHOST_BODY_NAMES: [&str; 8] = [
     "Booloon",
     "Ghoost",
@@ -97,7 +102,17 @@ fn main() {
     let target_ghosts = choose_target_ghosts();
     let ghost_wave = build_ghost_wave_config(&target_ghosts);
     App::new()
-    .add_plugins(DefaultPlugins)
+    .add_plugins(DefaultPlugins.set(
+        WindowPlugin {
+            primary_window: Some(Window {
+                title: "GRAVEYARD SHIFTS".to_string(),
+                fit_canvas_to_parent: true,
+                resolution: WindowResolution::new(WINDOW_RESOLUTION_X, WINDOW_RESOLUTION_Y),
+                ..default()
+            }),
+            ..default()
+        }
+    ))
     .insert_resource(build_lane_layout())
     .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)

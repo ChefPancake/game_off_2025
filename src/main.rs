@@ -54,6 +54,7 @@ const Z_POS_FRAME: f32 = -7.0;
 const Z_POS_DEVICE_BACK: f32 = -6.0;
 
 const GHOST_SPRITE_SCALE: f32 = 0.4;
+const GHOST_SHADOW_SCALE: f32 = 0.7;
 const GHOSTS_PER_LANE: u8 = 3;
 // don't spawn ghosts in the edges
 const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
@@ -479,6 +480,7 @@ struct Ghost;
 
 #[derive(Component)]
 struct GhostAnimationLoop {
+    base_scale: f32,
     theta_x: f32,
     omega_x: f32,
     radius_x: f32,
@@ -737,9 +739,14 @@ fn spawn_ghosts(
             .with_children(|cmd| {
                 cmd.spawn((
                     GhostShadow,
-                    Sprite::from_image(shadow_sprite.clone()),
+                    Sprite {
+                        image: shadow_sprite.clone(),
+                        color: Color::srgba(0.0, 0.0, 0.0, 0.5),
+                        ..default()
+                    },
                     Transform::from_xyz(0.0, 0.0, 0.0),
                     GhostAnimationLoop {
+                        base_scale: GHOST_SHADOW_SCALE,
                         theta_x,
                         omega_x,
                         radius_x,
@@ -753,6 +760,7 @@ fn spawn_ghosts(
                     Sprite::from_image(sprite),
                     Transform::from_xyz(0.0, 500.0, 1.0),
                     GhostAnimationLoop {
+                        base_scale: 1.0,
                         theta_x,
                         omega_x,
                         radius_x,
@@ -822,8 +830,8 @@ fn animate_ghosts(
         ghost_anim.theta_x += ghost_anim.omega_x * time.delta_secs();
         transform.translation.y = ghost_anim.theta_y.sin() * ghost_anim.radius_y + ghost_anim.offset_y;
         transform.translation.x = ghost_anim.theta_x.sin() * ghost_anim.radius_x;
-        transform.scale.x = 1.0 + (ghost_anim.theta_y * 2.0).sin() * GHOST_SQUIDGE_RADIUS;
-        transform.scale.y = 1.0 + (ghost_anim.theta_y * 2.0 + std::f32::consts::PI / 2.0).sin() * GHOST_SQUIDGE_RADIUS;
+        transform.scale.x = ghost_anim.base_scale + (ghost_anim.theta_y * 2.0).sin() * GHOST_SQUIDGE_RADIUS;
+        transform.scale.y = ghost_anim.base_scale + (ghost_anim.theta_y * 2.0 + std::f32::consts::PI / 2.0).sin() * GHOST_SQUIDGE_RADIUS;
     }
 }
 

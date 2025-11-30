@@ -3,7 +3,7 @@
 This is the remaining work for finishing the game
 
 - [ ] MVP
-    - [ ] Fix ghost spawning
+    - [x] Fix ghost spawning
         - It seems like the target ghost is not on the field at all
     - [x] Make firing the wave a click instead of the spacebar
     - [x] Pull in the new images
@@ -27,12 +27,12 @@ This is the remaining work for finishing the game
     - [x] Lock up UI while ghosts are wandering
     - [x] Display target ghost in the window
     - [x] Remove debug boxes
-    - [ ] Respond to game win/lose
-        - [ ] Lock everything down and spawn the splash screen
+    - [x] Respond to game win/lose
+        - [x] Lock everything down and spawn the splash screen
     - [x] Get new frame
     - [x] Put backing 
 - [ ] Ideal
-    - [ ] Handle 0th lane to not stick ghost behind the target
+    - [x] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen
     - [ ] Make Levels
         - [ ] Make the buttons do less to begin with, then ramp up

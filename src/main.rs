@@ -102,7 +102,7 @@ fn main() {
     .insert_resource(Sprites::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
-    .insert_resource(UIEnabled { enabled: true })
+    .insert_resource(UIEnabled { enabled: true, moving_ghosts: false, })
     //TODO: change this to change the difficulty
     .insert_resource(PlayerResources { charges: 3, reputation: 5 })
     .add_message::<CaptureGhostsInitialized>()
@@ -148,11 +148,14 @@ struct Sprites {
     remote_wave_inverter: Option<[Handle<Image>; 2]>,
     remote_handle: Option<Handle<Image>>,
     particles: Option<[Handle<Image>; 5]>,
+    win_splash: Option<Handle<Image>>,
+    lose_splash: Option<Handle<Image>>,
 }
 
 #[derive(Resource)]
 struct UIEnabled {
     enabled: bool,
+    moving_ghosts: bool,
 }
 
 #[derive(Resource)]
@@ -260,6 +263,9 @@ fn load_sprites(
         wave_particles.push(assets.load(file_name));
     }
     sprites.particles = Some(wave_particles.try_into().expect("Vec should have 5 elements"));
+
+    sprites.win_splash = Some(assets.load("ui/Success.png"));
+    sprites.lose_splash = Some(assets.load("ui/Fail.png"));
 }
 
 fn build_ghost_wave_config(
@@ -1071,10 +1077,10 @@ fn update_wave_handle(
     handles: Query<&mut Transform, With<FireWaveHandle>>
 ) {
     for mut transform in handles {
-        let z_rot_rads = if ui_enabled.enabled {
-            0.0
-        } else {
+        let z_rot_rads = if ui_enabled.moving_ghosts {
             std::f32::consts::PI
+        } else {
+            0.0
         };
         transform.rotation = Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, z_rot_rads);
     }
@@ -1098,20 +1104,39 @@ fn update_counters(
 fn handle_ui_enabled(
     mut ui_enabled: ResMut<UIEnabled>,
     ghosts: Query<&GhostScooting, With<Ghost>>,
+    game_ends: Query<Entity, With<GameEndSplash>>,
 ) {
-    ui_enabled.enabled = ghosts.is_empty();
+    ui_enabled.enabled = ghosts.is_empty() && game_ends.is_empty();
+    ui_enabled.moving_ghosts = !ghosts.is_empty();
 }
 
-//TODO: actually do something here
+#[derive(Component)]
+enum GameEndSplash {
+    Win,
+    Lose,
+}
+
 fn handle_game_end(
+    sprites: Res<Sprites>,
     mut on_win: MessageReader<GameWon>,
     mut on_lose: MessageReader<GameLost>,
+    mut commands: Commands,
 ) {
+    let win_sprite = sprites.win_splash.as_ref().expect("Images should be loaded");
+    let lose_sprite = sprites.lose_splash.as_ref().expect("Images should be loaded");
     for _ in on_win.read() {
-        println!("you win!");
+        commands.spawn((
+            GameEndSplash::Win,
+            Sprite::from_image(win_sprite.clone()),
+            Transform::from_xyz(0.0, 0.0, 10.0),
+        ));
     }
     for _ in on_lose.read() {
-        println!("you lose!");
+        commands.spawn((
+            GameEndSplash::Lose,
+            Sprite::from_image(lose_sprite.clone()),
+            Transform::from_xyz(0.0, 0.0, 10.0),
+        ));
     }
 }
 

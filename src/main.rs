@@ -124,6 +124,7 @@ fn main() {
     .add_message::<RemoteFired>()
     .add_message::<GameWon>()
     .add_message::<GameLost>()
+    .add_message::<GhostCaptured>()
     .add_systems(PreStartup, load_sprites)
     .add_systems(Startup, (
         spawn_ui,
@@ -139,11 +140,15 @@ fn main() {
         update_remote_dial,
         update_wave_handle,
         update_counters,
+        update_ghost_soul_particles,
+        update_burst_particle_roots,
+        update_burst_particles,
         handle_remote_clicks,
         capture_ghosts,
         handle_ui_enabled,
         handle_game_end,
         handle_window_resized,
+        handle_ghosts_captured,
     ))
     .run();
 }
@@ -162,7 +167,9 @@ struct Sprites {
     remote_wave_light: Option<[Handle<Image>; 2]>,
     remote_wave_inverter: Option<[Handle<Image>; 2]>,
     remote_handle: Option<Handle<Image>>,
-    particles: Option<[Handle<Image>; 5]>,
+    ghost_particles: Option<Handle<Image>>,
+    ghost_soul: Option<Handle<Image>>,
+    wave_particles: Option<[Handle<Image>; 5]>,
     win_splash: Option<Handle<Image>>,
     lose_splash: Option<Handle<Image>>,
     shadow: Option<Handle<Image>>,
@@ -278,7 +285,10 @@ fn load_sprites(
         let file_name = format!("ui/Particle{}.png", wave);
         wave_particles.push(assets.load(file_name));
     }
-    sprites.particles = Some(wave_particles.try_into().expect("Vec should have 5 elements"));
+    sprites.wave_particles = Some(wave_particles.try_into().expect("Vec should have 5 elements"));
+
+    sprites.ghost_particles = Some(assets.load("ui/Star.png"));
+    sprites.ghost_soul = Some(assets.load("ui/Death.png"));
 
     sprites.win_splash = Some(assets.load("ui/Success.png"));
     sprites.lose_splash = Some(assets.load("ui/Fail.png"));
@@ -670,6 +680,9 @@ fn spawn_wave_button(
     });
 }
 
+#[derive(Component)]
+struct GhostShadow;
+
 fn spawn_ghosts(
     sprites: Res<Sprites>,
     target_ghost: Res<TargetGhostTags>,
@@ -723,6 +736,7 @@ fn spawn_ghosts(
             ))
             .with_children(|cmd| {
                 cmd.spawn((
+                    GhostShadow,
                     Sprite::from_image(shadow_sprite.clone()),
                     Transform::from_xyz(0.0, 0.0, 0.0),
                     GhostAnimationLoop {
@@ -1009,14 +1023,19 @@ struct GameWon;
 #[derive(Message)]
 struct GameLost;
 
+#[derive(Message)]
+struct GhostCaptured {
+    entity: Entity,
+}
+
 fn capture_ghosts(
     mut on_capture_fired: MessageReader<CaptureGhostsInitialized>,
     ghosts: Query<(Entity, &GhostLanePosition, &GhostTags)>,
     target: Res<TargetGhostTags>,
     mut player_resources: ResMut<PlayerResources>,
-    mut commands: Commands,
     mut on_win: MessageWriter<GameWon>,
     mut on_lose: MessageWriter<GameLost>,
+    mut on_capture: MessageWriter<GhostCaptured>,
 ) {
     if on_capture_fired.is_empty() {
         return;
@@ -1036,9 +1055,8 @@ fn capture_ghosts(
             } else {
                 points_delta -= 2;
             }
-            println!("captured: body: {}; hat: {}", ghost_tags.body_tag, ghost_tags.hat_tag);
             // TODO: flash the screen(?), create lil ghost souls
-            commands.entity(entity).despawn();
+            on_capture.write(GhostCaptured{ entity });
         } else {
             if is_target {
                 target_ghosts_exist_in_other_lanes = true;
@@ -1063,6 +1081,164 @@ fn capture_ghosts(
         }
     }
 }
+
+#[derive(Component)]
+struct GhostSoulParticle {
+    omega: f32,
+    vel: Vec2,
+    lifetime: f32,
+}
+
+#[derive(Component)]
+struct BurstParticleRoot {
+    vel: Vec2,
+}
+
+#[derive(Component)]
+struct BurstParticle {
+    source_pos: Vec2,
+    target_pos: Vec2,
+    total_lifetime: f32,
+    lifetime: f32,
+}
+
+fn handle_ghosts_captured(
+    sprites: Res<Sprites>,
+    mut on_capture: MessageReader<GhostCaptured>,
+    ghost_roots: Query<(Entity, &Children), With<Ghost>>,
+    ghost_sprites: Query<&GlobalTransform, (With<GhostAnimationLoop>, Without<GhostShadow>)>,
+    mut commands: Commands,
+) {
+    if on_capture.is_empty() {
+        return;
+    }
+    let mut rng = rand::rng();
+    let soul_sprite = sprites.ghost_soul.as_ref().expect("Images should be loaded");
+    let star_sprite = sprites.ghost_particles.as_ref().expect("Images should be loaded");
+    for captured in on_capture.read() {
+        if let Ok((ghost_root, ghost_children)) = ghost_roots.get(captured.entity) {
+            for &child in ghost_children {
+                if let Ok(ghost_sprite_pos) = ghost_sprites.get(child) {
+                    commands.spawn((
+                        Transform::from_translation(ghost_sprite_pos.translation().with_z(Z_POS_GHOSTS + 2.0))
+                            .with_scale(Vec3::new(GHOST_SPRITE_SCALE, GHOST_SPRITE_SCALE, 1.0))
+                            .with_rotation(Quat::from_rotation_z(rng.random::<f32>() * 2.0 * std::f32::consts::PI)),
+                        Sprite::from_image(soul_sprite.clone()),
+                        GhostSoulParticle {
+                            omega: 2.0 + rng.random::<f32>(),
+                            vel: Vec2::new(-20.0 + rng.random::<f32>() * 40.0, 200.0),
+                            lifetime: 1.5 + rng.random::<f32>(),
+                        },
+                    ));
+                    spawn_burst_particles(
+                        ghost_sprite_pos.translation().with_z(Z_POS_GHOSTS + 1.0),
+                        &mut commands,
+                        &mut rng,
+                        star_sprite);
+                }
+            }
+            commands.entity(ghost_root).despawn();
+        }
+    }
+}
+
+fn spawn_burst_particles(
+    at: Vec3,
+    commands: &mut Commands,
+    rng: &mut ThreadRng,
+    star_sprite: &Handle<Image>,
+) {
+    commands.spawn((
+        BurstParticleRoot {
+            vel: Vec2::new(0.0, 50.0),
+        },
+        Visibility::Visible,
+        Transform::from_translation(at),
+    )).with_children(|cmd| {
+        const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
+        let num_particles = (3..6).choose(rng).unwrap();
+        let starting_angle = rng.random::<f32>() * TWO_PI;
+        let subdivision = TWO_PI / num_particles as f32;
+        let random_range = subdivision / 4.0;
+        let half_random_range = random_range / 2.0;
+        for i in 0..num_particles {
+            let angle = starting_angle + subdivision * i as f32;
+            let mut dir = Vec2::from_angle(angle - half_random_range + rng.random::<f32>() * random_range);
+            dir.y /= 3.0;
+            let distance = 80.0 + rng.random::<f32>() + 50.0;
+            let sprite_rot = -half_random_range + rng.random::<f32>() * random_range;
+            let scale_x = 0.7 + rng.random::<f32>() * 0.6;
+            let scale_y = 0.7 + rng.random::<f32>() * 0.6;
+            cmd.spawn((
+                Sprite::from_image(star_sprite.clone()),
+                Transform::from_translation(Vec3::default())
+                    .with_rotation(Quat::from_rotation_z(sprite_rot))
+                    .with_scale(Vec3::new(scale_x, scale_y, 1.0)),
+                BurstParticle {
+                    source_pos: Vec2::default(),
+                    target_pos: dir * distance,
+                    total_lifetime: 1.0,
+                    lifetime: 1.0,
+                },
+            ));
+        }
+    });
+}
+
+fn update_burst_particle_roots(
+    time: Res<Time>,
+    roots: Query<(Entity, &mut Transform, &BurstParticleRoot, &Children)>,
+    mut commands: Commands,
+) {
+    let del = time.delta_secs();
+    for (entity, mut transform, root, children) in roots {
+        if children.is_empty() {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        let del_pos = del * root.vel;
+        transform.translation += del_pos.extend(0.0);
+    }
+}
+
+fn update_burst_particles(
+    time: Res<Time>,
+    particles: Query<(Entity, &mut Transform, &mut BurstParticle)>,
+    mut commands: Commands,
+) {
+    let del = time.delta_secs();
+    for (entity, mut transform, mut particle) in particles {
+        particle.lifetime -= del;
+        if particle.lifetime <= 0.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        let lerp_s = (particle.total_lifetime - particle.lifetime) / particle.total_lifetime;
+        let lerp_s = lerp_s.powf(1.0 / 6.0);
+        let z_pos = transform.translation.z;
+        transform.translation = particle.source_pos.lerp(particle.target_pos, lerp_s).extend(z_pos);
+    }
+}
+
+fn update_ghost_soul_particles(
+    time: Res<Time>,
+    particles: Query<(Entity, &mut Transform, &mut GhostSoulParticle)>,
+    mut commands: Commands,
+) {
+    let del = time.delta_secs();
+    for (entity, mut transform, mut particle_spd) in particles {
+        particle_spd.lifetime -= del;
+        if particle_spd.lifetime <= 0.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        let del_theta = del * particle_spd.omega;
+        transform.rotate_z(del_theta);
+        let del_pos = del * particle_spd.vel;
+        transform.translation += del_pos.extend(0.0);
+    }
+}
+
 fn update_remote_lights(
     sprites: Res<Sprites>,
     ghost_wave: Res<GhostWaveConfig>,

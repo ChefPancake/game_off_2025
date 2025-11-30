@@ -33,12 +33,16 @@ This is the remaining work for finishing the game
     - [x] Put backing 
 - [ ] Ideal
     - [ ] Reformat images to be smaller
+    - [ ] Randomize which button does what
     - [x] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen
     - [ ] Make Levels
         - [ ] Make the buttons do less to begin with, then ramp up
-    - [ ] Make ghost particles
+    - [x] Make ghost particles
+        - [x] Make soul particle
+        - [x] Make burst particles
     - [ ] Make wave particles
+        - [ ] Rumble the remote
     - [ ] Track number of fired waves, dish out bonuses at level end
     - [x] Add ghost shadows
         - Make sure they're on a lower z_pos than the ghosts so they never sit on top of each other

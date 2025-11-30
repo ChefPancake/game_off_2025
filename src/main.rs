@@ -165,6 +165,7 @@ struct Sprites {
     particles: Option<[Handle<Image>; 5]>,
     win_splash: Option<Handle<Image>>,
     lose_splash: Option<Handle<Image>>,
+    shadow: Option<Handle<Image>>,
 }
 
 #[derive(Resource)]

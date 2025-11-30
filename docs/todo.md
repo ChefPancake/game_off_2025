@@ -43,12 +43,11 @@ This is the remaining work for finishing the game
         - [x] Make burst particles
     - [ ] Make wave particles
         - [ ] Rumble the remote
-    - [ ] Track number of fired waves, dish out bonuses at level end
     - [x] Add ghost shadows
         - Make sure they're on a lower z_pos than the ghosts so they never sit on top of each other
     - [ ] Add Z-sorting for ghosts in the field
         - make their z component a function of their y component
-    - [ ] Add flash for capture
+    - [x] Add flash for capture
     - [ ] Add music
     - [ ] Add sounds
         - [ ] button clicking

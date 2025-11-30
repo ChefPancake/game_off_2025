@@ -11,26 +11,8 @@ use rand::prelude::*;
 use std::collections::HashMap;
 
 const TAG_HAT_1: i8 = 0;
-const TAG_HAT_2: i8 = 1;
-const TAG_HAT_3: i8 = 2;
-const TAG_HAT_4: i8 = 3;
-const TAG_HAT_5: i8 = 4;
-const TAG_HAT_6: i8 = 5;
-const TAG_HAT_7: i8 = 6;
-const TAG_HAT_8: i8 = 7;
-const TAG_HAT_9: i8 = 8;
-const TAG_HAT_10: i8 = 9;
-const TAG_HAT_11: i8 = 10;
-const TAG_HAT_12: i8 = 11;
-const TAG_HAT_13: i8 = 12;
 const TAG_HAT_14: i8 = 13;
 const TAG_BODY_1: i8 = 14;
-const TAG_BODY_2: i8 = 15;
-const TAG_BODY_3: i8 = 16;
-const TAG_BODY_4: i8 = 17;
-const TAG_BODY_5: i8 = 18;
-const TAG_BODY_6: i8 = 19;
-const TAG_BODY_7: i8 = 20;
 const TAG_BODY_8: i8 = 21;
 
 const GAME_AREA_WIDTH: f32 = 3840.0;
@@ -50,14 +32,11 @@ const LANE_LAYOUT_DESPAWN_RIGHT: f32 = 2000.0;
 
 const Z_POS_BACKGROUND: f32 = -10.0;
 const Z_POS_GHOSTS: f32 = -8.0;
-const Z_POS_FRAME: f32 = -7.0;
-const Z_POS_DEVICE_BACK: f32 = -6.0;
+const Z_POS_FRAME: f32 = -2.0;
+const Z_POS_DEVICE_BACK: f32 = -1.0;
 
 const GHOST_SPRITE_SCALE: f32 = 0.4;
 const GHOST_SHADOW_SCALE: f32 = 0.7;
-const GHOSTS_PER_LANE: u8 = 3;
-// don't spawn ghosts in the edges
-const EXPECTED_TOTAL_GHOSTS: u8 = GHOSTS_PER_LANE * LANE_LAYOUT_SPAWN_LANES;
 
 const WINDOW_RESOLUTION_X: u32 = 960;
 const WINDOW_RESOLUTION_Y: u32 = 600; 
@@ -116,6 +95,7 @@ fn main() {
     ))
     .insert_resource(build_lane_layout())
     .insert_resource(Sprites::default())
+    .insert_resource(AudioHandles::default())
     .insert_resource(target_ghosts)
     .insert_resource(ghost_wave)
     .insert_resource(UIEnabled { enabled: true, moving_ghosts: false, })
@@ -126,11 +106,15 @@ fn main() {
     .add_message::<GameWon>()
     .add_message::<GameLost>()
     .add_message::<GhostCaptured>()
-    .add_systems(PreStartup, load_sprites)
+    .add_systems(PreStartup, (
+        load_sprites,
+        load_audio,
+    ))
     .add_systems(Startup, (
         spawn_ui,
         spawn_camera,
         spawn_ghosts,
+        spawn_music,
     ))
     .add_systems(Update, (
         animate_ghosts,
@@ -144,6 +128,7 @@ fn main() {
         update_ghost_soul_particles,
         update_burst_particle_roots,
         update_burst_particles,
+        update_flash_effect,
         handle_remote_clicks,
         capture_ghosts,
         handle_ui_enabled,
@@ -174,6 +159,23 @@ struct Sprites {
     win_splash: Option<Handle<Image>>,
     lose_splash: Option<Handle<Image>>,
     shadow: Option<Handle<Image>>,
+    flash_mesh: Option<Handle<Mesh>>,
+    flash_material: Option<Handle<ColorMaterial>>,
+}
+
+#[derive(Resource, Default)]
+struct AudioHandles {
+    music: Option<Handle<AudioSource>>,
+    rectified: Option<Handle<AudioSource>>,
+    rectified_inv: Option<Handle<AudioSource>>,
+    sawtooth: Option<Handle<AudioSource>>,
+    sawtooth_inv: Option<Handle<AudioSource>>,
+    sine: Option<Handle<AudioSource>>,
+    sine_inv: Option<Handle<AudioSource>>,
+    square: Option<Handle<AudioSource>>,
+    square_inv: Option<Handle<AudioSource>>,
+    triangle: Option<Handle<AudioSource>>,
+    triangle_inv: Option<Handle<AudioSource>>,
 }
 
 #[derive(Resource)]
@@ -226,8 +228,28 @@ struct TargetGhostTags {
 #[derive(Component)]
 struct TargetGhostDisplay;
 
+fn load_audio(
+    assets: Res<AssetServer>,
+    mut audio_handles: ResMut<AudioHandles>,
+) {
+    audio_handles.music = Some(assets.load("audio/dark-cold-beat.downsampled.wav"));
+
+    audio_handles.rectified = Some(assets.load("audio/Rectified.wav"));
+    audio_handles.rectified_inv = Some(assets.load("audio/Rectified_inverted.wav"));
+    audio_handles.sawtooth = Some(assets.load("audio/Sawtooth.wav"));
+    audio_handles.sawtooth_inv = Some(assets.load("audio/Sawtooth_inverted.wav"));
+    audio_handles.sine = Some(assets.load("audio/Sine.wav"));
+    audio_handles.sine_inv = Some(assets.load("audio/Sine_inverted.wav"));
+    audio_handles.square = Some(assets.load("audio/Square.wav"));
+    audio_handles.square_inv = Some(assets.load("audio/Square_inverted.wav"));
+    audio_handles.triangle = Some(assets.load("audio/Triangle.wav"));
+    audio_handles.triangle_inv = Some(assets.load("audio/Triangle_inverted.wav"));
+}
+
 fn load_sprites(
     assets: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     mut sprites: ResMut<Sprites>
 ) {
     let mut handles = Vec::<[Handle<Image>; 14]>::new();
@@ -295,6 +317,9 @@ fn load_sprites(
     sprites.lose_splash = Some(assets.load("ui/Fail.png"));
 
     sprites.shadow = Some(assets.load("ui/Shadow.png"));
+
+    sprites.flash_mesh = Some(meshes.add(Rectangle::new(GAME_AREA_WIDTH, GAME_AREA_HEIGHT)));
+    sprites.flash_material = Some(materials.add(Color::WHITE).into());
 }
 
 fn build_ghost_wave_config(
@@ -775,38 +800,19 @@ fn spawn_ghosts(
     }
 }
 
-#[derive(PartialEq, Eq)]
-enum TagType {
-    Body,
-    Hat,
-}
+#[derive(Component)]
+struct Music;
 
-fn get_tag_type(tag: i8) -> Option<TagType> {
-    return match tag {
-        TAG_HAT_1 => Some(TagType::Hat),
-        TAG_HAT_2 => Some(TagType::Hat),
-        TAG_HAT_3 => Some(TagType::Hat),
-        TAG_HAT_4 => Some(TagType::Hat),
-        TAG_HAT_5 => Some(TagType::Hat),
-        TAG_HAT_6 => Some(TagType::Hat),
-        TAG_HAT_7 => Some(TagType::Hat),
-        TAG_HAT_8 => Some(TagType::Hat),
-        TAG_HAT_9 => Some(TagType::Hat),
-        TAG_HAT_10 => Some(TagType::Hat),
-        TAG_HAT_11 => Some(TagType::Hat),
-        TAG_HAT_12 => Some(TagType::Hat),
-        TAG_HAT_13 => Some(TagType::Hat),
-        TAG_HAT_14 => Some(TagType::Hat),
-        TAG_BODY_1 => Some(TagType::Body),
-        TAG_BODY_2 => Some(TagType::Body),
-        TAG_BODY_3 => Some(TagType::Body),
-        TAG_BODY_4 => Some(TagType::Body),
-        TAG_BODY_5 => Some(TagType::Body),
-        TAG_BODY_6 => Some(TagType::Body),
-        TAG_BODY_7 => Some(TagType::Body),
-        TAG_BODY_8 => Some(TagType::Body),
-        _ => None,
-    };
+fn spawn_music(
+    audio: Res<AudioHandles>,
+    mut commands: Commands,
+) {
+    let music = audio.music.as_ref().expect("Audio should be loaded");
+    commands.spawn((
+        Music,
+        AudioPlayer::new(music.clone()),
+        PlaybackSettings::LOOP,
+    ));
 }
 
 fn spawn_camera(
@@ -857,6 +863,7 @@ struct RemoteFired;
 struct WanderingOff;
 
 fn begin_scooting_ghosts(
+    audio: Res<AudioHandles>,
     mut on_fire: MessageReader<RemoteFired>,
     ghosts: Query<(Entity, &GhostTags, &mut GhostLanePosition), (With<Ghost>, Without<GhostScooting>)>,
     lanes: Res<LaneLayout>,
@@ -877,6 +884,28 @@ fn begin_scooting_ghosts(
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[2]);
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[3]);
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
+    
+    let mut waves = Vec::<Handle<AudioSource>>::new();
+    for i in 0..ghost_wave.buttons.len() {
+        let button = &ghost_wave.buttons[i];
+        if button.enabled {
+            let handle = 
+                match (i, button.inverted) {
+                    (0, false) => audio.rectified.as_ref(),
+                    (0, true) => audio.rectified_inv.as_ref(),
+                    (1, false) => audio.sawtooth.as_ref(),
+                    (1, true) => audio.sawtooth_inv.as_ref(),
+                    (2, false) => audio.sine.as_ref(),
+                    (2, true) => audio.sine_inv.as_ref(),
+                    (3, false) => audio.square.as_ref(),
+                    (3, true) => audio.square_inv.as_ref(),
+                    (_, false) => audio.triangle.as_ref(),
+                    (_, true) => audio.triangle_inv.as_ref(),
+                };
+            let handle = handle.expect("Audio should be loaded").clone();
+            waves.push(handle);
+        }
+    }
 
     let wave_strength = ghost_wave.dial_strength as i8;
     let mut wave_fired = false;
@@ -948,8 +977,19 @@ fn begin_scooting_ghosts(
         if resources.charges <= 0 {
             on_lose.write(GameLost);
         }
+        let volume = 0.3 + 0.7 * 1.0 / waves.len() as f32;
+        for wave in waves {
+            commands.spawn((
+                Sfx,
+                AudioPlayer::new(wave),
+                PlaybackSettings::LOOP.with_volume(bevy::audio::Volume::Linear(volume)),
+            ));
+        }
     }
 }
+
+#[derive(Component)]
+struct Sfx;
 
 fn scoot_ghosts(
     ghosts: Query<(Entity, &GhostScooting, Option<&WanderingOff>, &mut Transform)>,
@@ -1072,7 +1112,6 @@ fn capture_ghosts(
             } else {
                 points_delta -= 2;
             }
-            // TODO: flash the screen(?), create lil ghost souls
             on_capture.write(GhostCaptured{ entity });
         } else {
             if is_target {
@@ -1081,8 +1120,6 @@ fn capture_ghosts(
         }
     }
     if any_ghosts_captured {
-        //TODO: maybe do something with negative points?
-            //Maybe you just lose instead?
         if (player_resources.reputation as i8) + points_delta <= 0 {
             player_resources.reputation = 0;
             on_lose.write(GameLost);
@@ -1107,11 +1144,17 @@ struct BurstParticleRoot {
     vel: Vec2,
 }
 
+//TODO: pull the lifetime stuff out into its own component
 #[derive(Component)]
 struct BurstParticle {
     source_pos: Vec2,
     target_pos: Vec2,
     total_lifetime: f32,
+    lifetime: f32,
+}
+
+#[derive(Component)]
+struct FlashEffect {
     lifetime: f32,
 }
 
@@ -1125,6 +1168,16 @@ fn handle_ghosts_captured(
     if on_capture.is_empty() {
         return;
     }
+    let rect_mesh = sprites.flash_mesh.as_ref().expect("Images should be loaded");
+    let rect_color = sprites.flash_material.as_ref().expect("Images should be loaded");
+    commands.spawn((
+        FlashEffect {
+            lifetime: 0.07,
+        },
+        Mesh2d(rect_mesh.clone()),
+        MeshMaterial2d(rect_color.clone()),
+        Transform::from_xyz(0.0, 0.0, Z_POS_GHOSTS + 3.0),
+    ));
     let mut rng = rand::rng();
     let soul_sprite = sprites.ghost_soul.as_ref().expect("Images should be loaded");
     let star_sprite = sprites.ghost_particles.as_ref().expect("Images should be loaded");
@@ -1151,6 +1204,20 @@ fn handle_ghosts_captured(
                 }
             }
             commands.entity(ghost_root).despawn();
+        }
+    }
+}
+
+fn update_flash_effect(
+    time: Res<Time>,
+    flashes: Query<(Entity, &mut FlashEffect)>,
+    mut commands: Commands
+) {
+    let del = time.delta_secs();
+    for (entity, mut flash) in flashes {
+        flash.lifetime -= del;
+        if flash.lifetime <= 0.0 {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -1328,10 +1395,17 @@ fn update_counters(
 fn handle_ui_enabled(
     mut ui_enabled: ResMut<UIEnabled>,
     ghosts: Query<&GhostScooting, With<Ghost>>,
+    sfx: Query<Entity, With<Sfx>>,
     game_ends: Query<Entity, With<GameEndSplash>>,
+    mut commands: Commands,
 ) {
     ui_enabled.enabled = ghosts.is_empty() && game_ends.is_empty();
     ui_enabled.moving_ghosts = !ghosts.is_empty();
+    if !ui_enabled.moving_ghosts && !sfx.is_empty() {
+        for entity in sfx {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 #[derive(Component)]
@@ -1367,7 +1441,7 @@ fn handle_game_end(
             let mut ghost_cmd = commands.entity(ghost);
             let despawn_x = [LANE_LAYOUT_DESPAWN_RIGHT, LANE_LAYOUT_DESPAWN_LEFT].choose(&mut rng).unwrap();
             let random_y = rng.random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
-            ghost_cmd.insert((
+            ghost_cmd.try_insert((
                 WanderingOff,
                 GhostScooting {
                     scoot_target: Vec2::new(*despawn_x, random_y),

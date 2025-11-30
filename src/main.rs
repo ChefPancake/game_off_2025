@@ -120,7 +120,7 @@ fn main() {
     .insert_resource(ghost_wave)
     .insert_resource(UIEnabled { enabled: true, moving_ghosts: false, })
     //TODO: change this to change the difficulty
-    .insert_resource(PlayerResources { charges: 3, reputation: 5 })
+    .insert_resource(PlayerResources { charges: 10, reputation: 5 })
     .add_message::<CaptureGhostsInitialized>()
     .add_message::<RemoteFired>()
     .add_message::<GameWon>()
@@ -862,6 +862,7 @@ fn begin_scooting_ghosts(
     lanes: Res<LaneLayout>,
     ghost_wave: Res<GhostWaveConfig>,
     target_ghost: Res<TargetGhostTags>,
+    mut resources: ResMut<PlayerResources>,
     mut commands: Commands,
     mut on_lose: MessageWriter<GameLost>,
 ) {
@@ -878,6 +879,7 @@ fn begin_scooting_ghosts(
     add_to_tag_moves(&mut tag_moves, &ghost_wave.buttons[4]);
 
     let wave_strength = ghost_wave.dial_strength as i8;
+    let mut wave_fired = false;
     for (ghost_entity, ghost_tags, mut ghost_lane_pos) in ghosts {
         if let Ok(mut ghost_cmd) = commands.get_entity(ghost_entity) {
             let mut move_acc = 0i8;
@@ -888,6 +890,7 @@ fn begin_scooting_ghosts(
                 move_acc += lane_change * wave_strength;
             }
             if move_acc != 0 {
+                wave_fired = true;
                 // apply the move component 
                 let is_target = 
                     ghost_tags.body_tag == target_ghost.target.body_tag
@@ -938,6 +941,12 @@ fn begin_scooting_ghosts(
                     ghost_lane_pos.lane = new_lane_idx as u8;
                 }
             }
+        }
+    }
+    if wave_fired {
+        resources.charges -= 1;
+        if resources.charges <= 0 {
+            on_lose.write(GameLost);
         }
     }
 }
@@ -1074,18 +1083,14 @@ fn capture_ghosts(
     if any_ghosts_captured {
         //TODO: maybe do something with negative points?
             //Maybe you just lose instead?
-            player_resources.charges -= 1;
         if (player_resources.reputation as i8) + points_delta <= 0 {
             player_resources.reputation = 0;
             on_lose.write(GameLost);
         } else {
-            player_resources.reputation = ((player_resources.reputation as i8) + points_delta) as u8;
-            if player_resources.charges == 0 && target_ghosts_exist_in_other_lanes {
-                on_lose.write(GameLost);
-            }
-            if !target_ghosts_exist_in_other_lanes {
-                on_win.write(GameWon);
-            }
+            player_resources.reputation = (player_resources.reputation as i8 + points_delta) as u8;
+        }
+        if !target_ghosts_exist_in_other_lanes {
+            on_win.write(GameWon);
         }
     }
 }
@@ -1339,6 +1344,7 @@ fn handle_game_end(
     sprites: Res<Sprites>,
     mut on_win: MessageReader<GameWon>,
     mut on_lose: MessageReader<GameLost>,
+    ghosts: Query<Entity, With<Ghost>>,
     mut commands: Commands,
 ) {
     let win_sprite = sprites.win_splash.as_ref().expect("Images should be loaded");
@@ -1351,11 +1357,24 @@ fn handle_game_end(
         ));
     }
     for _ in on_lose.read() {
+        let mut rng = rand::rng();
         commands.spawn((
             GameEndSplash::Lose,
             Sprite::from_image(lose_sprite.clone()),
             Transform::from_xyz(0.0, 0.0, 10.0),
         ));
+        for ghost in ghosts {
+            let mut ghost_cmd = commands.entity(ghost);
+            let despawn_x = [LANE_LAYOUT_DESPAWN_RIGHT, LANE_LAYOUT_DESPAWN_LEFT].choose(&mut rng).unwrap();
+            let random_y = rng.random::<f32>() * LANE_LAYOUT_HEIGHT - LANE_LAYOUT_HEIGHT / 2.0;
+            ghost_cmd.insert((
+                WanderingOff,
+                GhostScooting {
+                    scoot_target: Vec2::new(*despawn_x, random_y),
+                    movement_speed: 400.0,
+                },
+            ));
+        }
     }
 }
 

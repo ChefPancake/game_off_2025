@@ -58,3 +58,18 @@ This is the remaining work for finishing the game
         - [ ] Ghosts captured
     - [ ] Add parallax to the remote
 
+## Changing the rules
+
+Right now, the game isn't fun. We have a limited number of capture charges
+(default 3), but an infinite number of remote charges. We're going to flip this
+around, so then the game is about discovering what the buttons do in the most
+efficient way possible. This also gives more meaning to the strength dial.
+
+Once levels/rounds exist, we can keep the reputation from the previous levels
+while restoring the number of charges.
+
+The changes necessary are:
+- [x] Change default charges to 10
+- [x] Modify the Run button to decrease the number of charges if there are any waveforms activated
+- [x] Modify the Capture button to not decrease the number of charges
+- [x] When losing, send the ghosts offscreen

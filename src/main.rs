@@ -128,7 +128,7 @@ fn main() {
         update_ghost_soul_particles,
         update_burst_particle_roots,
         update_burst_particles,
-        update_flash_effect,
+        update_lifetimes,
         handle_remote_clicks,
         capture_ghosts,
         handle_ui_enabled,
@@ -991,10 +991,26 @@ fn begin_scooting_ghosts(
                 Sfx,
                 AudioPlayer::new(wave),
                 PlaybackSettings::LOOP.with_volume(bevy::audio::Volume::Linear(volume)),
+                Lifetime::new(2.0),
             ));
         }
     }
 }
+
+#[derive(Component)]
+struct Lifetime {
+    total_lifetime: f32,
+    lifetime: f32,
+}
+impl Lifetime {
+    fn new(seconds: f32) -> Lifetime {
+        Lifetime {
+            total_lifetime: seconds,
+            lifetime: seconds, 
+        }
+    }
+}
+
 
 #[derive(Component)]
 struct Sfx;
@@ -1144,7 +1160,6 @@ fn capture_ghosts(
 struct GhostSoulParticle {
     omega: f32,
     vel: Vec2,
-    lifetime: f32,
 }
 
 #[derive(Component)]
@@ -1152,19 +1167,14 @@ struct BurstParticleRoot {
     vel: Vec2,
 }
 
-//TODO: pull the lifetime stuff out into its own component
 #[derive(Component)]
 struct BurstParticle {
     source_pos: Vec2,
     target_pos: Vec2,
-    total_lifetime: f32,
-    lifetime: f32,
 }
 
 #[derive(Component)]
-struct FlashEffect {
-    lifetime: f32,
-}
+struct FlashEffect;
 
 fn handle_ghosts_captured(
     sprites: Res<Sprites>,
@@ -1179,9 +1189,8 @@ fn handle_ghosts_captured(
     let rect_mesh = sprites.flash_mesh.as_ref().expect("Images should be loaded");
     let rect_color = sprites.flash_material.as_ref().expect("Images should be loaded");
     commands.spawn((
-        FlashEffect {
-            lifetime: 0.07,
-        },
+        FlashEffect,
+        Lifetime::new(0.07),
         Mesh2d(rect_mesh.clone()),
         MeshMaterial2d(rect_color.clone()),
         Transform::from_xyz(0.0, 0.0, Z_POS_GHOSTS + 3.0),
@@ -1201,8 +1210,8 @@ fn handle_ghosts_captured(
                         GhostSoulParticle {
                             omega: 2.0 + rng.random::<f32>(),
                             vel: Vec2::new(-20.0 + rng.random::<f32>() * 40.0, 200.0),
-                            lifetime: 1.5 + rng.random::<f32>(),
                         },
+                        Lifetime::new(1.5 + rng.random::<f32>()),
                     ));
                     spawn_burst_particles(
                         ghost_sprite_pos.translation().with_z(Z_POS_GHOSTS + 1.0),
@@ -1216,15 +1225,15 @@ fn handle_ghosts_captured(
     }
 }
 
-fn update_flash_effect(
+fn update_lifetimes(
     time: Res<Time>,
-    flashes: Query<(Entity, &mut FlashEffect)>,
+    flashes: Query<(Entity, &mut Lifetime)>,
     mut commands: Commands
 ) {
     let del = time.delta_secs();
-    for (entity, mut flash) in flashes {
-        flash.lifetime -= del;
-        if flash.lifetime <= 0.0 {
+    for (entity, mut lifetime) in flashes {
+        lifetime.lifetime -= del;
+        if lifetime.lifetime <= 0.0 {
             commands.entity(entity).despawn();
         }
     }
@@ -1265,9 +1274,8 @@ fn spawn_burst_particles(
                 BurstParticle {
                     source_pos: Vec2::default(),
                     target_pos: dir * distance,
-                    total_lifetime: 1.0,
-                    lifetime: 1.0,
                 },
+                Lifetime::new(1.0),
             ));
         }
     });
@@ -1290,18 +1298,10 @@ fn update_burst_particle_roots(
 }
 
 fn update_burst_particles(
-    time: Res<Time>,
-    particles: Query<(Entity, &mut Transform, &mut BurstParticle)>,
-    mut commands: Commands,
+    particles: Query<(&mut Transform, &BurstParticle, &Lifetime)>,
 ) {
-    let del = time.delta_secs();
-    for (entity, mut transform, mut particle) in particles {
-        particle.lifetime -= del;
-        if particle.lifetime <= 0.0 {
-            commands.entity(entity).despawn();
-            continue;
-        }
-        let lerp_s = (particle.total_lifetime - particle.lifetime) / particle.total_lifetime;
+    for (mut transform, particle, lifetime) in particles {
+        let lerp_s = (lifetime.total_lifetime - lifetime.lifetime) / lifetime.total_lifetime;
         let lerp_s = lerp_s.powf(1.0 / 6.0);
         let z_pos = transform.translation.z;
         transform.translation = particle.source_pos.lerp(particle.target_pos, lerp_s).extend(z_pos);
@@ -1310,16 +1310,10 @@ fn update_burst_particles(
 
 fn update_ghost_soul_particles(
     time: Res<Time>,
-    particles: Query<(Entity, &mut Transform, &mut GhostSoulParticle)>,
-    mut commands: Commands,
+    particles: Query<(&mut Transform, &mut GhostSoulParticle)>,
 ) {
     let del = time.delta_secs();
-    for (entity, mut transform, mut particle_spd) in particles {
-        particle_spd.lifetime -= del;
-        if particle_spd.lifetime <= 0.0 {
-            commands.entity(entity).despawn();
-            continue;
-        }
+    for (mut transform, particle_spd) in particles {
         let del_theta = del * particle_spd.omega;
         transform.rotate_z(del_theta);
         let del_pos = del * particle_spd.vel;

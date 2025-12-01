@@ -41,7 +41,7 @@ This is the remaining work for finishing the game
     - [x] Make ghost particles
         - [x] Make soul particle
         - [x] Make burst particles
-    - [ ] Make wave particles
+    - [x] Make wave particles
         - [ ] Rumble the remote
     - [x] Add ghost shadows
         - Make sure they're on a lower z_pos than the ghosts so they never sit on top of each other

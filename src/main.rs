@@ -151,6 +151,8 @@ fn main() {
         update_lifetimes,
         animate_ghosts,
         scoot_ghosts,
+        update_wave_particle_emitters,
+        update_wave_particles,
         update_remote_lights,
         update_remote_invert_switches,
         update_remote_dial,
@@ -1243,6 +1245,22 @@ fn begin_scooting_ghosts(
                 Lifetime::new(2.0),
             ));
         }
+        commands.spawn((
+            Transform::from_xyz(1450.0, 760.0, Z_POS_DEVICE_BACK + 1.0),
+            WaveEmitter {
+                enabled: [
+                    ghost_wave.buttons[0].enabled,
+                    ghost_wave.buttons[1].enabled,
+                    ghost_wave.buttons[2].enabled,
+                    ghost_wave.buttons[3].enabled,
+                    ghost_wave.buttons[4].enabled,
+                ],
+                emit_period: 0.05,
+                timer: 0.0, 
+                projectile_spd: 1000.0,
+            },
+            Lifetime::new(2.0),
+        ));
     }
 }
 
@@ -1406,6 +1424,60 @@ fn capture_ghosts(
 }
 
 #[derive(Component)]
+struct WaveParticle {
+    vel: Vec2,
+}
+
+#[derive(Component)]
+struct WaveEmitter {
+    enabled: [bool; 5],
+    emit_period: f32,
+    timer: f32,
+    projectile_spd: f32,
+}
+
+fn update_wave_particle_emitters(
+    time: Res<Time>,
+    sprites: Res<Sprites>,
+    emitters: Query<(&mut WaveEmitter, &Transform)>,
+    mut commands: Commands,
+) {
+    let del = time.delta_secs();
+    let mut rng = rand::rng();
+    let wave_sprites = sprites.wave_particles.as_ref().expect("Images should be loaded");
+    for (mut emitter, transform) in emitters {
+        emitter.timer -= del;
+        if emitter.timer <= 0.0 {
+            emitter.timer = emitter.emit_period;
+            let wave_type = (0..5).filter(|&x| emitter.enabled[x]).choose(&mut rng).unwrap();
+            let wave_sprite = wave_sprites[wave_type].clone();
+            let angle = rng.random::<f32>() * std::f32::consts::PI;
+            let vel = Vec2::from_angle(angle) * emitter.projectile_spd;
+            let spawn_pos = transform.translation + (vel * 0.1).extend(0.0);
+            commands.spawn((
+                Transform::from_rotation(Quat::from_rotation_z(angle))
+                    .with_translation(spawn_pos),
+                Sprite::from_image(wave_sprite),
+                WaveParticle {
+                    vel,
+                },
+                Lifetime::new(emitter.emit_period * 4.0),
+            ));
+        }
+    }
+}
+
+fn update_wave_particles(
+    time: Res<Time>,
+    particles: Query<(&mut Transform, &WaveParticle)>,
+) {
+    let del = time.delta_secs();
+    for (mut transform, particle) in particles {
+        transform.translation += (particle.vel * del).extend(0.0);
+    }
+}
+
+#[derive(Component)]
 struct GhostSoulParticle {
     omega: f32,
     vel: Vec2,
@@ -1476,11 +1548,11 @@ fn handle_ghosts_captured(
 
 fn update_lifetimes(
     time: Res<Time>,
-    flashes: Query<(Entity, &mut Lifetime)>,
+    lifetimes: Query<(Entity, &mut Lifetime)>,
     mut commands: Commands
 ) {
     let del = time.delta_secs();
-    for (entity, mut lifetime) in flashes {
+    for (entity, mut lifetime) in lifetimes {
         lifetime.lifetime -= del;
         if lifetime.lifetime <= 0.0 {
             commands.entity(entity).despawn();

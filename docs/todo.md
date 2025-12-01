@@ -35,8 +35,8 @@ This is the remaining work for finishing the game
     - [x] Reformat images to be smaller
     - [x] Randomize which button does what
     - [x] Handle 0th lane to not stick ghost behind the target
-    - [ ] Make loading screen
-    - [ ] Make Levels
+    - [x] Make loading screen
+    - [x] Make Levels
         - [ ] Make the buttons do less to begin with, then ramp up
     - [x] Make ghost particles
         - [x] Make soul particle

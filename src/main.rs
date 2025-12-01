@@ -124,15 +124,32 @@ fn main() {
     ).run_if(in_state(GameState::Loading)))
     .add_systems(OnExit(GameState::Loading), (
         despawn_loading_bar,
-    ))
-    .add_systems(OnEnter(GameState::Game), (
         spawn_ui,
-        spawn_ghosts,
         spawn_music,
     ))
+    .add_systems(OnEnter(GameState::Game), (
+        spawn_ghosts,
+    ))
     .add_systems(Update, (
-        animate_ghosts,
         begin_scooting_ghosts,
+        handle_remote_clicks,
+        capture_ghosts,
+        handle_game_end,
+        handle_ghosts_captured,
+    ).run_if(in_state(GameState::Game)))
+    .add_systems(OnEnter(GameState::GameEnd), (
+        spawn_reset_timer,
+    ))
+    .add_systems(Update, (
+        wait_for_reset
+    ).run_if(in_state(GameState::GameEnd)))
+    .add_systems(OnExit(GameState::GameEnd), (
+        reset_game,
+    ))
+    .add_systems(Update, (
+        handle_window_resized,
+        update_lifetimes,
+        animate_ghosts,
         scoot_ghosts,
         update_remote_lights,
         update_remote_invert_switches,
@@ -142,18 +159,8 @@ fn main() {
         update_ghost_soul_particles,
         update_burst_particle_roots,
         update_burst_particles,
-        update_lifetimes,
-        handle_remote_clicks,
-        capture_ghosts,
         handle_ui_enabled,
-        handle_game_end,
-        handle_ghosts_captured,
-
-        //DEBUG
-        debug_try_reenter_state,
-
-    ).run_if(in_state(GameState::Game)))
-    .add_systems(Update, handle_window_resized)
+    ))
     .run();
 }
 
@@ -586,7 +593,6 @@ fn choose_target_ghosts() -> TargetGhostTags {
     let variant_body_1 = bodies.pop().unwrap();
     let variant_body_2 = bodies.pop().unwrap();
 
-    println!("target: body: {}; hat: {}", target_body, target_hat);
     let variant_1 = GhostTags::new(variant_body_1, target_hat);
     let variant_2 = GhostTags::new(target_body, variant_hat_1);
     let variant_3 = GhostTags::new(variant_body_2, variant_hat_1);
@@ -812,13 +818,44 @@ fn spawn_ui(
     });
 }
 
-fn debug_try_reenter_state(
-    key_input: Res<ButtonInput<KeyCode>>,
-    mut state: ResMut<NextState<GameState>>,
+fn reset_game(
+    sprites: Res<Sprites>,
+    mut ui_enabled: ResMut<UIEnabled>,
+    mut resources: ResMut<PlayerResources>,
+    mut target_ghosts: ResMut<TargetGhostTags>,
+    mut ghost_wave: ResMut<GhostWaveConfig>,
+    game_end_splash: Query<Entity, With<GameEndSplash>>,
+    ghosts: Query<Entity, With<Ghost>>,
+    target_displays: Query<&mut Sprite, With<TargetGhostDisplay>>,
+    mut commands: Commands,
 ) {
-    if key_input.just_pressed(KeyCode::Space) {
-        state.set(GameState::Game);
+    if resources.reputation == 0 || resources.charges == 0 {
+        resources.reputation = 5;
     }
+    resources.charges = 10;
+
+    *target_ghosts = choose_target_ghosts();
+    *ghost_wave = build_ghost_wave_config(&target_ghosts);
+
+    for splash in game_end_splash {
+        commands.entity(splash).despawn();
+    }
+
+    for ghost in ghosts {
+        commands.entity(ghost).despawn();
+    }
+    
+    let ghost_sprites = sprites.ghosts.as_ref().expect("Images should have loaded");
+    let body_idx = (target_ghosts.target.body_tag - TAG_BODY_1) as usize;
+    let hat_idx = target_ghosts.target.hat_tag as usize;
+    let target_ghost_sprite = ghost_sprites[body_idx][hat_idx].clone();
+
+    for mut target_display in target_displays {
+        target_display.image = target_ghost_sprite.clone();
+    }
+
+    ui_enabled.moving_ghosts = false;
+    ui_enabled.enabled = true;
 }
 
 #[derive(Component)]
@@ -1360,7 +1397,7 @@ fn capture_ghosts(
             player_resources.reputation = 0;
             on_lose.write(GameLost);
         } else {
-            player_resources.reputation = (player_resources.reputation as i8 + points_delta) as u8;
+            player_resources.reputation = (player_resources.reputation as i8 + points_delta).min(10) as u8;
         }
         if !target_ghosts_exist_in_other_lanes {
             on_win.write(GameWon);
@@ -1633,6 +1670,7 @@ fn handle_game_end(
     mut on_win: MessageReader<GameWon>,
     mut on_lose: MessageReader<GameLost>,
     ghosts: Query<Entity, With<Ghost>>,
+    mut state: ResMut<NextState<GameState>>,
     mut commands: Commands,
 ) {
     let win_sprite = sprites.win_splash.as_ref().expect("Images should be loaded");
@@ -1643,6 +1681,7 @@ fn handle_game_end(
             Sprite::from_image(win_sprite.clone()),
             Transform::from_xyz(0.0, 0.0, 10.0),
         ));
+        state.set(GameState::GameEnd);
     }
     for _ in on_lose.read() {
         let mut rng = rand::rng();
@@ -1663,6 +1702,28 @@ fn handle_game_end(
                 },
             ));
         }
+        state.set(GameState::GameEnd);
+    }
+}
+
+#[derive(Component)]
+struct ResetTimer;
+
+fn spawn_reset_timer(
+    mut commands: Commands,
+) {
+    commands.spawn((
+        ResetTimer,
+        Lifetime::new(4.0),
+    ));
+}
+
+fn wait_for_reset(
+    query: Query<Entity, With<ResetTimer>>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    if query.is_empty() {
+        state.set(GameState::Game);
     }
 }
 

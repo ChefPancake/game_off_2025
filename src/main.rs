@@ -363,14 +363,22 @@ fn build_ghost_wave_config(
         None,
         None,
     ];
+    let mut buttons = vec![
+        button_1,
+        button_2,
+        button_3,
+        button_4,
+        button_5,
+    ];
+    buttons.shuffle(&mut rng);
 
     return GhostWaveConfig {
         buttons: [
-            build_button_config(button_1, &mut rng),
-            build_button_config(button_2, &mut rng),
-            build_button_config(button_3, &mut rng),
-            build_button_config(button_4, &mut rng),
-            build_button_config(button_5, &mut rng),
+            build_button_config(buttons.pop().unwrap(), &mut rng),
+            build_button_config(buttons.pop().unwrap(), &mut rng),
+            build_button_config(buttons.pop().unwrap(), &mut rng),
+            build_button_config(buttons.pop().unwrap(), &mut rng),
+            build_button_config(buttons.pop().unwrap(), &mut rng),
         ],
         dial_strength: 1,
     };

@@ -826,22 +826,22 @@ fn reset_game(
     mut resources: ResMut<PlayerResources>,
     mut target_ghosts: ResMut<TargetGhostTags>,
     mut ghost_wave: ResMut<GhostWaveConfig>,
-    game_end_splash: Query<Entity, With<GameEndSplash>>,
+    game_end_splash: Query<(Entity, &GameEndSplash)>,
     ghosts: Query<Entity, With<Ghost>>,
     target_displays: Query<&mut Sprite, With<TargetGhostDisplay>>,
     mut commands: Commands,
 ) {
-    if resources.reputation == 0 || resources.charges == 0 {
+    let (splash_entity, game_end) = game_end_splash.single().unwrap();
+
+    if *game_end == GameEndSplash::Lose {
         resources.reputation = 5;
     }
     resources.charges = 10;
 
+    commands.entity(splash_entity).despawn();
+
     *target_ghosts = choose_target_ghosts();
     *ghost_wave = build_ghost_wave_config(&target_ghosts);
-
-    for splash in game_end_splash {
-        commands.entity(splash).despawn();
-    }
 
     for ghost in ghosts {
         commands.entity(ghost).despawn();
@@ -1731,7 +1731,7 @@ fn handle_ui_enabled(
     }
 }
 
-#[derive(Component)]
+#[derive(PartialEq, Eq, Component)]
 enum GameEndSplash {
     Win,
     Lose,
@@ -1747,7 +1747,7 @@ fn handle_game_end(
 ) {
     let win_sprite = sprites.win_splash.as_ref().expect("Images should be loaded");
     let lose_sprite = sprites.lose_splash.as_ref().expect("Images should be loaded");
-    for _ in on_win.read() {
+    if !on_win.is_empty() {
         commands.spawn((
             GameEndSplash::Win,
             Sprite::from_image(win_sprite.clone()),
@@ -1755,7 +1755,8 @@ fn handle_game_end(
         ));
         state.set(GameState::GameEnd);
     }
-    for _ in on_lose.read() {
+    on_win.clear();
+    if !on_lose.is_empty() {
         let mut rng = rand::rng();
         commands.spawn((
             GameEndSplash::Lose,
@@ -1776,6 +1777,7 @@ fn handle_game_end(
         }
         state.set(GameState::GameEnd);
     }
+    on_lose.clear();
 }
 
 #[derive(Component)]

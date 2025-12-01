@@ -32,8 +32,8 @@ This is the remaining work for finishing the game
     - [x] Get new frame
     - [x] Put backing 
 - [ ] Ideal
-    - [ ] Reformat images to be smaller
-    - [ ] Randomize which button does what
+    - [x] Reformat images to be smaller
+    - [x] Randomize which button does what
     - [x] Handle 0th lane to not stick ghost behind the target
     - [ ] Make loading screen
     - [ ] Make Levels
@@ -48,11 +48,11 @@ This is the remaining work for finishing the game
     - [ ] Add Z-sorting for ghosts in the field
         - make their z component a function of their y component
     - [x] Add flash for capture
-    - [ ] Add music
+    - [x] Add music
     - [ ] Add sounds
         - [ ] button clicking
         - [ ] switch flipping
-        - [ ] Turning on the device
+        - [x] Turning on the device
         - [ ] Ghosts leaving
         - [ ] Ghosts captured
     - [ ] Add parallax to the remote

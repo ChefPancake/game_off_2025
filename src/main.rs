@@ -82,17 +82,23 @@ fn main() {
     let target_ghosts = choose_target_ghosts();
     let ghost_wave = build_ghost_wave_config(&target_ghosts);
     App::new()
-    .add_plugins(DefaultPlugins.set(
-        WindowPlugin {
-            primary_window: Some(Window {
-                title: "GRAVEYARD SHIFTS".to_string(),
-                fit_canvas_to_parent: true,
-                resolution: WindowResolution::new(WINDOW_RESOLUTION_X, WINDOW_RESOLUTION_Y),
+    .add_plugins(
+        DefaultPlugins.set(
+            WindowPlugin {
+                primary_window: Some(Window {
+                    title: "GRAVEYARD SHIFTS".to_string(),
+                    fit_canvas_to_parent: true,
+                    resolution: WindowResolution::new(WINDOW_RESOLUTION_X, WINDOW_RESOLUTION_Y),
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        }
-    ))
+            })
+    )
+    .insert_state(GameState::default())
+    .insert_resource(LoadingProgress{
+        current: 0,
+        total: 157,
+    })
     .insert_resource(build_lane_layout())
     .insert_resource(Sprites::default())
     .insert_resource(AudioHandles::default())
@@ -106,13 +112,21 @@ fn main() {
     .add_message::<GameWon>()
     .add_message::<GameLost>()
     .add_message::<GhostCaptured>()
-    .add_systems(PreStartup, (
+    .add_systems(OnEnter(GameState::Loading), (
         load_sprites,
         load_audio,
-    ))
-    .add_systems(Startup, (
-        spawn_ui,
         spawn_camera,
+        spawn_loading_bar,
+    ))
+    .add_systems(Update, (
+        update_loading_progress,
+        update_loading_bar,
+    ).run_if(in_state(GameState::Loading)))
+    .add_systems(OnExit(GameState::Loading), (
+        despawn_loading_bar,
+    ))
+    .add_systems(OnEnter(GameState::Game), (
+        spawn_ui,
         spawn_ghosts,
         spawn_music,
     ))
@@ -133,10 +147,22 @@ fn main() {
         capture_ghosts,
         handle_ui_enabled,
         handle_game_end,
-        handle_window_resized,
         handle_ghosts_captured,
-    ))
+
+        //DEBUG
+        debug_try_reenter_state,
+
+    ).run_if(in_state(GameState::Game)))
+    .add_systems(Update, handle_window_resized)
     .run();
+}
+
+#[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
+enum GameState {
+    #[default]
+    Loading,
+    Game,
+    GameEnd,
 }
 
 #[derive(Resource, Default)]
@@ -227,6 +253,140 @@ struct TargetGhostTags {
 
 #[derive(Component)]
 struct TargetGhostDisplay;
+
+#[derive(Resource)]
+struct LoadingProgress {
+    total: usize,
+    current: usize,
+}
+
+fn update_loading_progress(
+    assets: Res<AssetServer>,
+    sprites: Res<Sprites>,
+    audio: Res<AudioHandles>,
+    mut loading_progress: ResMut<LoadingProgress>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    let mut current_progress = 0;
+    if asset_is_loaded(&assets, &audio.music) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.rectified) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.rectified_inv) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.sawtooth) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.sawtooth_inv) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.sine) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.sine_inv) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.square) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.square_inv) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.triangle) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &audio.triangle_inv) {
+        current_progress += 1;
+    }
+    for group in sprites.ghosts.iter() {
+        for handles in group {
+            current_progress += count_loaded_assets(&assets, handles);
+        }
+    }
+    if asset_is_loaded(&assets, &sprites.background) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.frame) {
+        current_progress += 1;
+    }
+    for handles in sprites.frame_counter.iter() {
+        current_progress += count_loaded_assets(&assets, handles);
+    }
+    if asset_is_loaded(&assets, &sprites.remote_base) {
+        current_progress += 1;
+    }
+    for handles in sprites.remote_wave_buttons.iter() {
+        current_progress += count_loaded_assets(&assets, handles);
+    }
+    for handles in sprites.remote_wave_light.iter() {
+        current_progress += count_loaded_assets(&assets, handles);
+    }
+    for handles in sprites.remote_wave_inverter.iter() {
+        current_progress += count_loaded_assets(&assets, handles);
+    }
+    if asset_is_loaded(&assets, &sprites.remote_handle) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.ghost_particles) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.ghost_soul) {
+        current_progress += 1;
+    }
+    for handles in sprites.wave_particles.iter() {
+        current_progress += count_loaded_assets(&assets, handles);
+    }
+    if asset_is_loaded(&assets, &sprites.win_splash) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.lose_splash) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.shadow) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.flash_mesh) {
+        current_progress += 1;
+    }
+    if asset_is_loaded(&assets, &sprites.flash_material) {
+        current_progress += 1;
+    }
+
+    loading_progress.current = current_progress;
+    if loading_progress.current >= loading_progress.total {
+        game_state.set(GameState::Game);
+    }
+}
+
+fn update_loading_bar(
+    progress: Res<LoadingProgress>,
+    loading_bars: Query<(&mut Transform, &LoadingBar)>
+) {
+    for (mut transform, bar) in loading_bars {
+        if *bar == LoadingBar::Inner {
+            let scale = progress.current as f32 / progress.total as f32;
+            transform.scale.x = scale;
+        }
+    }
+}
+
+fn count_loaded_assets<T: Asset>(asset_server: &AssetServer, handles: &[Handle<T>]) -> usize {
+    let mut loaded_count = 0;
+    for handle in handles.iter() {
+        if asset_is_loaded(asset_server, &Some(handle.clone())) {
+            loaded_count += 1;
+        }
+    }
+    return loaded_count;
+}
+
+fn asset_is_loaded<T: Asset>(asset_server: &AssetServer, image_handle: &Option<Handle<T>>) -> bool {
+    let Some(handle) = image_handle else { panic!("Image does not have a handle") };
+    return asset_server.get_load_state(handle).is_some_and(|val| val.is_loaded());
+}
 
 fn load_audio(
     assets: Res<AssetServer>,
@@ -623,6 +783,7 @@ fn spawn_ui(
         ));
         cmd.spawn((
             FireWaveHandle,
+            Visibility::Visible,
             Transform::from_xyz(-195.0, 400.0, 1.0),
         )).with_child((
             Transform::from_xyz(5.0, 100.0, 0.0),
@@ -649,6 +810,15 @@ fn spawn_ui(
                 i as i8);
         }
     });
+}
+
+fn debug_try_reenter_state(
+    key_input: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    if key_input.just_pressed(KeyCode::Space) {
+        state.set(GameState::Game);
+    }
 }
 
 #[derive(Component)]
@@ -831,6 +1001,48 @@ fn spawn_camera(
         Camera::default(),
         Transform::from_scale(Vec3::new(3.0, 3.0, 1.0)),
     ));
+}
+
+#[derive(PartialEq, Eq, Component)]
+enum LoadingBar {
+    Inner,
+    Outer,
+}
+
+fn spawn_loading_bar(
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut commands: Commands,
+) {
+    let color = Color::srgb(0.396, 0.0, 0.255);
+    let outer_mesh = meshes.add(Rectangle::new(2000.0, 100.0));
+    let inner_mesh = meshes.add(Rectangle::new(1960.0, 60.0));
+    let outer_color = materials.add(color);
+    let inner_color = materials.add(Color::WHITE);
+
+    commands.spawn((
+        LoadingBar::Outer,
+        Transform::default(),
+        Mesh2d(outer_mesh),
+        MeshMaterial2d(outer_color),
+    ))
+    .with_child((
+        LoadingBar::Inner,
+        Transform::default(),
+        Mesh2d(inner_mesh),
+        MeshMaterial2d(inner_color),
+    ));
+}
+
+fn despawn_loading_bar(
+    query: Query<(Entity, &LoadingBar)>,
+    mut commands: Commands,
+) {
+    for (entity, bar) in query {
+        if *bar == LoadingBar::Outer {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 fn animate_ghosts(
